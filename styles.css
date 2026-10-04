@@ -1,0 +1,225 @@
+/* NyaReader 样式 —— 简洁、不干扰阅读 */
+
+.nyareader-root {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	background: var(--background-primary);
+}
+
+/* 工具栏 */
+.nyareader-toolbar {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+	padding: 6px 12px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	flex-wrap: wrap;
+}
+.nyareader-toolbar-btn {
+	padding: 3px 10px;
+	border-radius: 6px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	color: var(--text-normal);
+	cursor: pointer;
+	font-size: 13px;
+}
+.nyareader-toolbar-btn:hover {
+	background: var(--background-modifier-hover);
+}
+
+/* 内容区：左目录 / 中央阅读 / 右侧翻译 */
+.nyareader-content {
+	flex: 1;
+	display: flex;
+	min-height: 0;
+	position: relative;
+}
+.nyareader-toc-panel {
+	width: 0;
+	overflow: hidden;
+	transition: width 0.18s ease;
+	border-right: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	overflow-y: auto;
+	flex-shrink: 0;
+}
+.nyareader-toc-panel.is-open {
+	width: 240px;
+}
+.nyareader-reading {
+	flex: 1;
+	min-width: 0;
+	overflow: auto;
+	padding: 20px 28px;
+	background: var(--background-primary);
+}
+.nyareader-trans-host {
+	width: 0;
+	flex-shrink: 0;
+	transition: width 0.18s ease;
+}
+.nyareader-trans-host:has(.nyareader-trans-panel[style*="display: block"]) {
+	width: 320px;
+}
+
+/* 翻译面板 */
+.nyareader-trans-panel {
+	width: 320px;
+	height: 100%;
+	border-left: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	display: flex;
+	flex-direction: column;
+}
+.nyareader-trans-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 12px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+.nyareader-trans-header select {
+	background: var(--background-primary);
+	color: var(--text-normal);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	padding: 2px 6px;
+	font-size: 12px;
+}
+.nyareader-icon-btn {
+	background: transparent;
+	border: none;
+	color: var(--text-muted);
+	cursor: pointer;
+	font-size: 12px;
+}
+.nyareader-icon-btn:hover {
+	color: var(--text-normal);
+}
+.nyareader-trans-body {
+	flex: 1;
+	overflow-y: auto;
+	padding: 12px;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+.nyareader-trans-source {
+	color: var(--text-normal);
+	font-size: 13px;
+	white-space: pre-wrap;
+}
+.nyareader-trans-target {
+	color: var(--text-accent);
+	font-size: 14px;
+	line-height: 1.7;
+	white-space: pre-wrap;
+}
+.nyareader-trans-status {
+	padding: 4px 12px;
+	color: var(--text-muted);
+	font-size: 12px;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+/* 阅读区主题 */
+.nyareader-theme-dark {
+	background: #1e1e1e;
+	color: #cfcfcf;
+}
+.nyareader-theme-sepia {
+	background: #f4ecd8;
+	color: #5b4636;
+}
+
+/* 占位提示 */
+.nyareader-placeholder {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 100%;
+	text-align: center;
+	color: var(--text-muted);
+	font-size: 15px;
+	line-height: 2;
+	white-space: pre-line;
+}
+
+/* ===== PDF 阅读区 ===== */
+.nyareader-pdf-canvas-host {
+	position: relative;
+	margin: 0 auto;
+	box-shadow: 0 2px 14px rgba(0, 0, 0, 0.12);
+	background: #fff;
+}
+.nyareader-pdf-canvas-host canvas {
+	display: block;
+	width: 100%;
+	height: auto;
+}
+.nyareader-pdf-overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	pointer-events: none;
+	overflow: hidden;
+}
+.nyareader-pdf-annotation-marker {
+	position: absolute;
+	background: rgba(255, 235, 59, 0.35);
+	border-radius: 2px;
+}
+.nyareader-pdf-textlayer {
+	position: absolute;
+	top: 0;
+	left: 50%;
+	transform: translateX(-50%);
+	line-height: 1;
+	opacity: 0.25;
+}
+.nyareader-pdf-textlayer span {
+	position: absolute;
+	white-space: pre;
+	cursor: text;
+	color: transparent;
+}
+.nyareader-pdf-page-label {
+	position: sticky;
+	bottom: 0;
+	text-align: center;
+	padding: 6px;
+	color: var(--text-muted);
+	font-size: 12px;
+	background: var(--background-primary);
+	border-top: 1px solid var(--background-modifier-border);
+}
+.nyareader-reading.pdf-loading {
+	opacity: 0.6;
+}
+
+/* ===== 目录面板 ===== */
+.nyareader-toc-list {
+	padding: 6px;
+}
+.nyareader-toc-item {
+	padding: 3px 6px;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 13px;
+	line-height: 1.5;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.nyareader-toc-item:hover {
+	background: var(--background-modifier-hover);
+}
+.nyareader-toc-empty {
+	padding: 10px;
+	color: var(--text-muted);
+	font-size: 13px;
+}

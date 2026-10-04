@@ -1,0 +1,39 @@
+{
+	"name": "nyareader",
+	"version": "0.1.0",
+	"description": "NyaReader: multi-format ebook reader for Obsidian (EPUB/PDF/MOBI/AZW3/TXT) with select-to-translate and annotations.",
+	"main": "main.js",
+	"type": "module",
+	"scripts": {
+		"dev": "node esbuild.config.mjs",
+		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+		"typecheck": "tsc -noEmit -skipLibCheck",
+		"test": "vitest run",
+		"test:watch": "vitest"
+	},
+	"keywords": [
+		"obsidian",
+		"ebook",
+		"reader",
+		"epub",
+		"pdf",
+		"translation"
+	],
+	"license": "MIT",
+	"dependencies": {
+		"epubjs": "^0.3.93",
+		"iconv-lite": "^0.6.3",
+		"jschardet": "^3.1.4",
+		"pdf-lib": "^1.17.1",
+		"pdfjs-dist": "^4.8.69"
+	},
+	"devDependencies": {
+		"@types/node": "20.19.43",
+		"builtin-modules": "^5.4.0",
+		"esbuild": "0.21.5",
+		"obsidian": "1.13.1",
+		"tslib": "2.8.1",
+		"typescript": "5.9.3",
+		"vitest": "^2.1.9"
+	}
+}

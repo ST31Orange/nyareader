@@ -1,0 +1,9 @@
+{
+	"id": "nyareader",
+	"name": "NyaReader",
+	"version": "0.1.0",
+	"minAppVersion": "1.5.0",
+	"description": "多格式电子书阅读器：EPUB/PDF/MOBI/AZW3/TXT，即划即译与批注。",
+	"author": "NyaHome",
+	"isDesktopOnly": true
+}
