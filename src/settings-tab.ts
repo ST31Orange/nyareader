@@ -134,6 +134,14 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 	private renderOfflineSection(el: HTMLElement): void {
 		el.createEl("h4", { text: "离线翻译（本地引擎）" });
 		new Setting(el)
+			.setName("不会装？")
+			.setDesc("打开分步安装向导：识别系统、下载桌面端、启动服务、一键测试连接")
+			.addButton((b) =>
+				b.setButtonText("打开安装向导").setCta().onClick(() => {
+					this.plugin.openTranslationSetup();
+				})
+			);
+		new Setting(el)
 			.setName("离线引擎地址")
 			.setDesc("例如 http://127.0.0.1:8989 （MTranServer）")
 			.addText((t) => {
@@ -232,3 +240,4 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 		}
 	}
 }
+

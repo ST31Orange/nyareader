@@ -2,7 +2,7 @@
  * NyaReader 主入口：插件生命周期、命令、视图注册、设置面板。
  * 只使用 Obsidian 公开稳定 API（个别非公开 API 均做了降级处理）。
  */
-import { Modal, Notice, Plugin, TFile, Setting } from "obsidian";
+import { Notice, Plugin, TFile } from "obsidian";
 import { NyaReaderSettings, normalizeSettings } from "./settings";
 import { NyaReaderSettingTab } from "./settings-tab";
 import { ReaderView, READER_VIEW_TYPE } from "./view/ReaderView";
@@ -11,6 +11,7 @@ import { HistoryStore } from "./services/history/HistoryStore";
 import { obsidianHttpTransport } from "./utils/http";
 import { isOnline } from "./utils/network";
 import { TranslationService } from "./services/translation/TranslationService";
+import { openTranslationSetupWizard } from "./view/TranslationSetupWizard";
 import { formatFromExtension, sniffFormat } from "./services/books/Parser";
 import type { BookFormat } from "./types";
 
@@ -62,6 +63,12 @@ export default class NyaReaderPlugin extends Plugin {
 			id: "open-ebook",
 			name: "打开电子书…",
 			callback: () => void this.pickAndOpenBook(),
+		});
+
+		this.addCommand({
+			id: "open-translation-setup",
+			name: "翻译引擎安装向导…",
+			callback: () => this.openTranslationSetup(),
 		});
 
 		// 桌面端菜单：右键支持格式文件 -> 打开
@@ -160,41 +167,45 @@ export default class NyaReaderPlugin extends Plugin {
 		this.app.workspace.revealLeaf(leaf);
 	}
 
-	/** 首次运行引导：无离线翻译引擎且有网络时，弹窗提示安装方式。 */
+	/** 首次运行引导：无离线翻译引擎且有网络时，弹出安装向导。 */
 	private async maybePromptOfflineTranslation(): Promise<void> {
 		this.settings.translationOfflinePromptShown = true;
 		await this.saveSettings();
 		if (this.settings.translation.mode === "online") return;
 		if (this.settings.translation.offlineEndpoint.trim()) return;
 		const online = await isOnline();
-		if (online) new OfflineTranslationGuideModal(this.app).open();
+		if (online) this.openTranslationSetup();
+	}
+
+	/** 打开离线翻译引擎安装向导（命令与设置面板共用）。 */
+	openTranslationSetup(): void {
+		openTranslationSetupWizard(this.app, {
+			initialEndpoint: this.settings.translation.offlineEndpoint,
+			onSaveEndpoint: async (endpoint) => {
+				this.settings.translation.offlineEndpoint = endpoint;
+				this.settings.translation.mode = "offline";
+				await this.saveSettings();
+				await this.translation.reloadConfig();
+			},
+			onSwitchToOnline: async () => {
+				this.settings.translation.mode = "online";
+				await this.saveSettings();
+				await this.translation.reloadConfig();
+			},
+			http: obsidianHttpTransport,
+			onDone: () => undefined,
+		});
 	}
 }
 
-/** 离线翻译引擎安装引导对话框。 */
-class OfflineTranslationGuideModal extends Modal {
-	onOpen(): void {
-		const { contentEl } = this;
-		contentEl.createEl("h3", { text: "NyaReader — 翻译引擎" });
-		contentEl.createEl("p", {
-			text: "检测到你尚未安装离线翻译引擎（如 MTranServer）。离线翻译可完全本地运行、保护隐私。",
-		});
-		contentEl.createEl("p", {
-			text: "两种方式任选：\n• 前往「设置 → 第三方插件 → NyaReader → 翻译」配置在线翻译（OpenAI 兼容 / DeepL）；\n• 按 MTranServer 官方文档在本机部署离线引擎后，在设置中填写其地址（如 http://127.0.0.1:8989）。",
-		});
-		new Setting(contentEl).addButton((b) =>
-			b.setButtonText("稍后再说").onClick(() => this.close())
-		);
-	}
 
-	onClose(): void {
-		this.contentEl.empty();
-	}
-}
 
 /** 文件名清理：防止路径穿越。 */
 function sanitizeFileName(name: string): string {
 	return name.replace(/[\\/:*?"<>|]/g, "_");
 }
+
+
+
 
 
