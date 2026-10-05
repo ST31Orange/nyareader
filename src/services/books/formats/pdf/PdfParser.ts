@@ -5,7 +5,7 @@
  */
 import type { BookModel, TocItem } from "../../../../types";
 import type { IBookParser, ParseContext } from "../../Parser";
-import { loadPdfJs } from "./pdfWorker";
+import { pdfjs } from "./pdfWorker";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 
 interface PdfOutlineNode {
@@ -18,7 +18,6 @@ export class PdfParser implements IBookParser {
 	readonly format = "pdf" as const;
 
 	async parse(ctx: ParseContext): Promise<BookModel> {
-		const pdfjs = await loadPdfJs();
 		const loadingTask = pdfjs.getDocument({
 			data: ctx.buffer,
 			isEvalSupported: false,

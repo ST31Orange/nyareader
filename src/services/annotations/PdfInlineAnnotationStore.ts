@@ -10,7 +10,7 @@ import type { Annotation, AnnotationKind, IAnnotationStore } from "./AnnotationM
 import { annotationId } from "./AnnotationModel";
 import { writePdfAnnotation, expectedSubtype } from "./PdfAnnotationWriter";
 import type { PdfBackupService } from "./PdfBackupService";
-import { loadPdfJs } from "../books/formats/pdf/pdfWorker";
+import { pdfjs } from "../books/formats/pdf/pdfWorker";
 
 interface PdfInlineStoreData {
 	version: 1;
@@ -96,7 +96,6 @@ export class PdfInlineAnnotationStore implements IAnnotationStore {
 	}
 
 	private async verify(pdfPath: string, bytes: Uint8Array, pageIndex: number, kind: AnnotationKind): Promise<void> {
-		const pdfjs = await loadPdfJs();
 		const task = pdfjs.getDocument({ data: bytes.slice().buffer as ArrayBuffer });
 		const doc = await task.promise;
 		try {

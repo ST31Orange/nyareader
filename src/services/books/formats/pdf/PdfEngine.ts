@@ -6,7 +6,7 @@
 import type { AnnotationTarget, IReaderEngine, ReaderEngineEvents } from "../../IReaderEngine";
 import { SimpleReaderEmitter } from "../../IReaderEngine";
 import type { BookModel, ReaderSettings } from "../../../../types";
-import { loadPdfJs, initPdfWorker } from "./pdfWorker";
+import { pdfjs, initPdfWorker } from "./pdfWorker";
 import type { Plugin } from "obsidian";
 import type { PDFDocumentProxy, PDFPageProxy, PageViewport } from "pdfjs-dist";
 
@@ -52,7 +52,6 @@ export class PdfEngine implements IReaderEngine {
 
 		try {
 			await initPdfWorker(this.opts.plugin);
-			const pdfjs = await loadPdfJs();
 			const loadingTask = pdfjs.getDocument({
 				data: this.opts.buffer,
 				isEvalSupported: false,
@@ -194,7 +193,6 @@ export class PdfEngine implements IReaderEngine {
 
 		// 文本层
 		this.textLayerHost.empty();
-		const pdfjs = await loadPdfJs();
 		const textLayer = new pdfjs.TextLayer({
 			textContentSource: page.streamTextContent(),
 			container: this.textLayerHost,
