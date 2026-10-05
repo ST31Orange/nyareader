@@ -63,9 +63,14 @@ export class TranslationPanel {
 		return this.rootEl.style.display !== "none";
 	}
 
-	toggle(): void {
-		if (this.isVisible()) this.hide();
-		else this.show();
+	/** 切换显隐，返回切换后的可见状态（便于外部同步按钮激活态）。 */
+	toggle(): boolean {
+		if (this.isVisible()) {
+			this.hide();
+			return false;
+		}
+		this.show();
+		return true;
 	}
 
 	getTargetLanguage(): string {

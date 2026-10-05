@@ -1,12 +1,18 @@
 /**
  * NyaReader 阅读视图（ItemView）。
- * 独立阅读叶，内嵌工具栏、阅读区、右侧翻译面板、左侧目录面板。
+ * 独立阅读叶。
+ *
+ * 布局（v0.2.0）：最大化阅读区。
+ * - 常用按钮用 view.addAction() 放进 Obsidian 自带标题栏那一行（公开 API，1.1+）；
+ * - 阅读区上方保留一条细高可折叠工具栏（非悬浮、默认收起），放次要操作；
+ * - 「翻译」按钮：点击开（变色激活）→ 右侧弹出翻译面板（320px）→ 划词自动翻译 → 再点关闭。
  * 只与 ReaderController 交互；Controller 面向引擎接口。
  */
 import { ItemView, Notice, TFile, WorkspaceLeaf } from "obsidian";
 import type NyaReaderPlugin from "../main";
 import { TranslationPanel } from "./TranslationPanel";
 import { ReaderController } from "./ReaderController";
+import { BOOKSHELF_VIEW_TYPE } from "./BookshelfViewTypes";
 import type { BookModel } from "../types";
 
 export { READER_VIEW_TYPE } from "./ReaderViewTypes";
@@ -33,6 +39,10 @@ export class ReaderView extends ItemView {
 	private transPanel: TranslationPanel | null = null;
 	private controller: ReaderController | null = null;
 	private currentFile: TFile | null = null;
+	/** 标题栏上的翻译按钮（用于切换激活态） */
+	private translateActionEl: HTMLElement | null = null;
+	/** 翻译模式开关：开启时划词自动翻译 */
+	private translateMode = false;
 
 	constructor(leaf: WorkspaceLeaf, private plugin: NyaReaderPlugin) {
 		super(leaf);
@@ -55,8 +65,13 @@ export class ReaderView extends ItemView {
 		container.empty();
 		container.addClass("nyareader-root");
 
+		// ① 常用按钮进 Obsidian 标题栏（addAction 返回按钮元素，可加激活态）
+		this.buildTitlebarActions();
+
+		// ② 细高可折叠工具栏（默认收起，次要操作）
 		this.toolbarEl = container.createDiv({ cls: "nyareader-toolbar" });
-		this.buildToolbar();
+		this.buildCollapsibleToolbar();
+		this.toolbarEl.toggleClass("is-collapsed", true);
 
 		this.bodyEl = container.createDiv({ cls: "nyareader-content" });
 		this.tocPanel = this.bodyEl.createDiv({ cls: "nyareader-toc-panel" });
@@ -71,7 +86,7 @@ export class ReaderView extends ItemView {
 			onProgress: () => undefined,
 		});
 
-		// 右侧翻译面板
+		// 右侧翻译面板（引擎配置在 NyaLingo，此处只负责目标语言与展示）
 		this.transPanel = new TranslationPanel({
 			onTranslate: (text, to) => this.controller?.translateSelection(text, to) ?? Promise.reject(new Error("控制器未就绪")),
 			getLanguages: () => LANGUAGE_OPTIONS,
@@ -80,7 +95,7 @@ export class ReaderView extends ItemView {
 				this.plugin.settings.translation.targetLanguage = lang;
 				await this.plugin.saveSettings();
 			},
-			onOpenSettings: () => openSettingsTab(this.plugin.app),
+			onOpenSettings: () => this.plugin.lingo.openSettingsOrWizard(),
 		});
 		this.transPanel.mount(this.transHost);
 
@@ -103,12 +118,12 @@ export class ReaderView extends ItemView {
 		this.attachEngineSelectionListener();
 	}
 
-	/** 划词自动翻译：监听引擎 selection 事件，在右侧面板显示译文。 */
+	/** 划词自动翻译：仅翻译模式开启时，在右侧面板显示译文。 */
 	private attachEngineSelectionListener(): void {
 		const engine = this.controller?.currentEngine;
 		if (!engine || !this.transPanel) return;
 		engine.on("selection", (payload) => {
-			if (payload.text?.trim()) this.transPanel?.translateSelection(payload.text);
+			if (this.translateMode && payload.text?.trim()) this.transPanel?.translateSelection(payload.text);
 		});
 	}
 
@@ -138,19 +153,56 @@ export class ReaderView extends ItemView {
 		void this.leaf;
 	}
 
-	private buildToolbar(): void {
+	// ---------- 布局：标题栏 + 折叠工具栏 ----------
+
+	/** 常用按钮进 Obsidian 标题栏（addAction，公开 API）。 */
+	private buildTitlebarActions(): void {
+		// 书架
+		this.addAction("library", "书架", () => void this.openBookshelf());
+		// 打开
+		this.addAction("folder-open", "打开电子书…", () => void this.plugin.pickAndOpenBook());
+		// 目录
+		this.addAction("list-tree", "目录", () => this.toggleToc());
+		// 翻译（可激活）
+		this.translateActionEl = this.addAction("languages", "翻译（开/关）", () => this.toggleTranslate());
+		this.translateActionEl.addClass("nyareader-titlebar-action");
+		// 更多（展开/收起细工具栏）
+		this.addAction("ellipsis-horizontal", "更多操作", () => this.toggleCollapsibleToolbar());
+	}
+
+	/** 折叠工具栏：放次要操作（翻页、高亮、笔记、字号）。默认收起。 */
+	private buildCollapsibleToolbar(): void {
 		const btn = (label: string, onClick: () => void): void => {
 			const b = this.toolbarEl.createEl("button", { text: label, cls: "nyareader-toolbar-btn" });
 			b.addEventListener("click", onClick);
 		};
-		btn("打开…", () => void this.plugin.pickAndOpenBook());
-		btn("目录", () => this.toggleToc());
-		btn("翻译", () => this.transPanel?.toggle());
 		btn("上一页", () => void this.controller?.currentEngine?.prevPage());
 		btn("下一页", () => void this.controller?.currentEngine?.nextPage());
 		btn("高亮", () => void this.addHighlight());
 		btn("笔记", () => void this.addNote());
-		btn("主题", () => this.cycleTheme());
+		btn("A−", () => void this.adjustFont(-1));
+		btn("A+", () => void this.adjustFont(1));
+	}
+
+	private toggleCollapsibleToolbar(): void {
+		this.toolbarEl.toggleClass("is-collapsed", !this.toolbarEl.hasClass("is-collapsed"));
+	}
+
+	/** 翻译按钮：开（激活变色+右侧面板）→ 再点关。 */
+	private toggleTranslate(): void {
+		this.translateMode = !this.translateMode;
+		this.translateActionEl?.toggleClass("is-active", this.translateMode);
+		if (this.translateMode) {
+			this.transPanel?.show();
+			new Notice("NyaReader：翻译模式已开启，选中文本自动翻译。", 3000);
+		} else {
+			this.transPanel?.hide();
+			new Notice("NyaReader：翻译模式已关闭。", 3000);
+		}
+	}
+
+	private async openBookshelf(): Promise<void> {
+		await this.plugin.activateBookshelf();
 	}
 
 	private toggleToc(open?: boolean): void {
@@ -175,33 +227,23 @@ export class ReaderView extends ItemView {
 		});
 	}
 
-	private cycleTheme(): void {
-		const themes = ["light", "dark", "sepia"] as const;
-		const cur = this.plugin.settings.reader.theme;
-		const next = themes[(themes.indexOf(cur) + 1) % themes.length];
-		this.plugin.settings.reader.theme = next;
+	/** 字号微调（仅当前页生效，不改全局设置）。 */
+	private adjustFont(delta: number): void {
+		const engine = this.controller?.currentEngine;
+		if (!engine) return;
+		const cur = this.plugin.settings.reader.fontSize;
+		const next = Math.min(40, Math.max(10, cur + delta));
+		if (next === cur) return;
+		this.plugin.settings.reader.fontSize = next;
 		void this.plugin.saveSettings();
-		this.readingArea.toggleClass("nyareader-theme-dark", next === "dark");
-		this.readingArea.toggleClass("nyareader-theme-sepia", next === "sepia");
-		this.controller?.currentEngine?.applySettings(this.controller.currentReaderSettings());
+		engine.applySettings(this.controller!.currentReaderSettings());
 	}
 
 	private showWelcome(): void {
 		this.readingArea.empty();
 		this.readingArea.createDiv({
 			cls: "nyareader-placeholder",
-			text: "NyaReader\n\n点击「打开…」选择电子书（EPUB / PDF / MOBI / AZW3 / TXT）\n选中文本后点击「高亮」或「笔记」批注，划词后在右侧翻译",
+			text: "NyaReader\n\n点击「打开」选择电子书（EPUB / PDF / MOBI / AZW3 / TXT）\n选中文本后点击「高亮」或「笔记」批注；点标题栏「翻译」开启划词翻译",
 		});
 	}
 }
-
-/** 打开 Obsidian 设置面板（非公开 API 需降级处理）。 */
-function openSettingsTab(app: import("obsidian").App): void {
-	try {
-		const setting = (app as unknown as { setting?: { open(): void } }).setting;
-		setting?.open();
-	} catch {
-		new Notice("NyaReader：请在「设置 -> 第三方插件 -> NyaReader」中完成配置。");
-	}
-}
-

@@ -1,17 +1,19 @@
 /**
  * NyaReader 主入口：插件生命周期、命令、视图注册、设置面板。
  * 只使用 Obsidian 公开稳定 API（个别非公开 API 均做了降级处理）。
+ *
+ * 翻译：v0.2.0 起委托独立插件 NyaLingo（getPlugin("nyalingo")），
+ * 本插件不再内置 Provider / 缓存 / 离线引擎探测，只保留 UI 级目标语言。
  */
 import { Notice, Plugin, TFile } from "obsidian";
 import { NyaReaderSettings, normalizeSettings } from "./settings";
 import { NyaReaderSettingTab } from "./settings-tab";
 import { ReaderView, READER_VIEW_TYPE } from "./view/ReaderView";
+import { BookshelfView } from "./view/BookshelfView";
+import { BOOKSHELF_VIEW_TYPE } from "./view/BookshelfViewTypes";
 import { BookIndexService } from "./services/storage/BookIndexService";
 import { HistoryStore } from "./services/history/HistoryStore";
-import { obsidianHttpTransport } from "./utils/http";
-import { isOnline } from "./utils/network";
-import { TranslationService } from "./services/translation/TranslationService";
-import { openTranslationSetupWizard } from "./view/TranslationSetupWizard";
+import { NyaLingoClient } from "./services/lingo/NyaLingoClient";
 import { formatFromExtension, sniffFormat } from "./services/books/Parser";
 import type { BookFormat } from "./types";
 
@@ -21,7 +23,8 @@ export default class NyaReaderPlugin extends Plugin {
 	settings!: NyaReaderSettings;
 	bookIndex!: BookIndexService;
 	history!: HistoryStore;
-	translation!: TranslationService;
+	/** 翻译客户端：委托 NyaLingo 共享翻译服务。 */
+	lingo!: NyaLingoClient;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -37,27 +40,19 @@ export default class NyaReaderPlugin extends Plugin {
 		);
 		await this.history.load();
 
-		this.translation = new TranslationService({
-			config: () => this.settings.translation,
-			http: obsidianHttpTransport,
-			history: this.history,
-			persistentCacheStore: {
-				load: async () => {
-					try {
-						const raw = await this.app.vault.adapter.read(`${this.manifest.dir ?? ""}nyareader-translation-cache.json`.replace(/\/+/g, "/"));
-						return JSON.parse(raw) as Record<string, string>;
-					} catch {
-						return {};
-					}
-				},
-				save: async (data: Record<string, string>) => {
-					await this.app.vault.adapter.write(`${this.manifest.dir ?? ""}nyareader-translation-cache.json`.replace(/\/+/g, "/"), JSON.stringify(data));
-				},
-			},
+		this.lingo = new NyaLingoClient({
+			app: this.app,
+			onMissing: () => new Notice("NyaReader：未检测到 NyaLingo 翻译插件，翻译功能不可用。请安装并启用 NyaLingo。", 6000),
 		});
-		await this.translation.initialize();
 
 		this.registerView(READER_VIEW_TYPE, (leaf) => new ReaderView(leaf, this));
+		this.registerView(BOOKSHELF_VIEW_TYPE, (leaf) => new BookshelfView(leaf, this));
+
+		this.addCommand({
+			id: "open-bookshelf",
+			name: "打开书架…",
+			callback: () => void this.activateBookshelf(),
+		});
 
 		this.addCommand({
 			id: "open-ebook",
@@ -66,9 +61,9 @@ export default class NyaReaderPlugin extends Plugin {
 		});
 
 		this.addCommand({
-			id: "open-translation-setup",
-			name: "翻译引擎安装向导…",
-			callback: () => this.openTranslationSetup(),
+			id: "open-lingo-settings",
+			name: "打开翻译服务设置…",
+			callback: () => this.lingo.openSettingsOrWizard(),
 		});
 
 		// 桌面端菜单：右键支持格式文件 -> 打开
@@ -84,9 +79,9 @@ export default class NyaReaderPlugin extends Plugin {
 			})
 		);
 
-		// 首次使用：翻译离线引擎引导
-		if (!this.settings.translationOfflinePromptShown) {
-			void this.maybePromptOfflineTranslation();
+		// 首次使用：若 NyaLingo 未安装则提示一次
+		if (!this.settings.translationPromptShown) {
+			void this.maybePromptLingo();
 		}
 
 		this.addSettingTab(new NyaReaderSettingTab(this.app, this));
@@ -156,6 +151,18 @@ export default class NyaReaderPlugin extends Plugin {
 		if (view) await view.openBook(file);
 	}
 
+	/** 打开书架主页（工作模式 A：书架 -> 点书 -> 阅读）。 */
+	async activateBookshelf(): Promise<void> {
+		const existing = this.app.workspace.getLeavesOfType(BOOKSHELF_VIEW_TYPE)[0];
+		if (existing) {
+			this.app.workspace.revealLeaf(existing);
+			return;
+		}
+		const leaf = this.app.workspace.getLeaf("tab");
+		await leaf.setViewState({ type: BOOKSHELF_VIEW_TYPE, active: true });
+		this.app.workspace.revealLeaf(leaf);
+	}
+
 	async activateReader(): Promise<void> {
 		const existing = this.app.workspace.getLeavesOfType(READER_VIEW_TYPE)[0];
 		if (existing) {
@@ -167,45 +174,16 @@ export default class NyaReaderPlugin extends Plugin {
 		this.app.workspace.revealLeaf(leaf);
 	}
 
-	/** 首次运行引导：无离线翻译引擎且有网络时，弹出安装向导。 */
-	private async maybePromptOfflineTranslation(): Promise<void> {
-		this.settings.translationOfflinePromptShown = true;
+	/** 首次运行：NyaLingo 未安装时给出安装引导（仅一次，且不强制）。 */
+	private async maybePromptLingo(): Promise<void> {
+		this.settings.translationPromptShown = true;
 		await this.saveSettings();
-		if (this.settings.translation.mode === "online") return;
-		if (this.settings.translation.offlineEndpoint.trim()) return;
-		const online = await isOnline();
-		if (online) this.openTranslationSetup();
-	}
-
-	/** 打开离线翻译引擎安装向导（命令与设置面板共用）。 */
-	openTranslationSetup(): void {
-		openTranslationSetupWizard(this.app, {
-			initialEndpoint: this.settings.translation.offlineEndpoint,
-			onSaveEndpoint: async (endpoint) => {
-				this.settings.translation.offlineEndpoint = endpoint;
-				this.settings.translation.mode = "offline";
-				await this.saveSettings();
-				await this.translation.reloadConfig();
-			},
-			onSwitchToOnline: async () => {
-				this.settings.translation.mode = "online";
-				await this.saveSettings();
-				await this.translation.reloadConfig();
-			},
-			http: obsidianHttpTransport,
-			onDone: () => undefined,
-		});
+		if (this.lingo.isAvailable()) return;
+		new Notice("NyaReader：推荐安装配套翻译插件 NyaLingo（离线+在线翻译）。可在命令面板运行「打开翻译服务设置…」。", 8000);
 	}
 }
-
-
 
 /** 文件名清理：防止路径穿越。 */
 function sanitizeFileName(name: string): string {
 	return name.replace(/[\\/:*?"<>|]/g, "_");
 }
-
-
-
-
-

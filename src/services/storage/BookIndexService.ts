@@ -10,6 +10,7 @@ export interface BookIndexEntry {
 	path: string;
 	format: BookFormat;
 	title: string;
+	author?: string;
 	lastOpenedAt: number;
 	progress?: ReadingProgress;
 }

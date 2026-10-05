@@ -1,33 +1,15 @@
 /**
  * NyaReader 设置类型、默认值与归一化。
- * 翻译部分刻意沿用 NyaHome 既有 MTranServer 配置字段命名，便于用户原样迁移。
+ *
+ * 翻译部分设计（v0.2.0 起）：引擎/密钥/缓存等全部委托独立翻译插件 NyaLingo 一份，
+ * 本插件只保留 UI 级设置（源/目标语言），与 NyaLingo 配置互不干扰。
  */
 import type { ReaderSettings, ReaderTheme } from "./types";
 
-export type TranslationMode = "offline" | "online";
-
-export type TranslationProviderType = "openai" | "deepl" | "mtran";
-
 export interface TranslationSettings {
-	/** 默认源/目标语言（默认中英互译：auto -> zh-Hans） */
+	/** UI 级默认源/目标语言（默认中英互译：auto -> zh-Hans） */
 	sourceLanguage: string;
 	targetLanguage: string;
-	mode: TranslationMode;
-	provider: TranslationProviderType;
-	/** 离线翻译引擎（如 MTranServer）地址 */
-	offlineEndpoint: string;
-	offlineToken: string;
-	/** OpenAI 兼容 API */
-	openaiBaseUrl: string;
-	openaiApiKey: string;
-	openaiModel: string;
-	/** DeepL */
-	deeplApiKey: string;
-	deeplBaseUrl: string;
-	/** 公共 */
-	timeoutMs: number;
-	cacheEnabled: boolean;
-	cacheMaxEntries: number;
 }
 
 export interface NyaReaderSettings {
@@ -35,8 +17,8 @@ export interface NyaReaderSettings {
 	bookOverrides: Record<string, ReaderSettings>;
 	reader: ReaderSettings;
 	translation: TranslationSettings;
-	/** 首次运行时是否已提示安装离线翻译引擎 */
-	translationOfflinePromptShown: boolean;
+	/** 首次运行时是否已提示安装翻译服务（NyaLingo） */
+	translationPromptShown: boolean;
 	/** 批注侧车文件名后缀 */
 	annotationSidecarSuffix: string;
 }
@@ -44,18 +26,6 @@ export interface NyaReaderSettings {
 export const DEFAULT_TRANSLATION_SETTINGS: TranslationSettings = {
 	sourceLanguage: "auto",
 	targetLanguage: "zh-Hans",
-	mode: "offline",
-	provider: "mtran",
-	offlineEndpoint: "",
-	offlineToken: "",
-	openaiBaseUrl: "https://api.openai.com/v1",
-	openaiApiKey: "",
-	openaiModel: "gpt-4o-mini",
-	deeplApiKey: "",
-	deeplBaseUrl: "https://api-free.deepl.com/v2",
-	timeoutMs: 15000,
-	cacheEnabled: true,
-	cacheMaxEntries: 500,
 };
 
 export const DEFAULT_SETTINGS: NyaReaderSettings = {
@@ -71,11 +41,11 @@ export const DEFAULT_SETTINGS: NyaReaderSettings = {
 		pageWidth: 420,
 	},
 	translation: { ...DEFAULT_TRANSLATION_SETTINGS },
-	translationOfflinePromptShown: false,
+	translationPromptShown: false,
 	annotationSidecarSuffix: ".annotations",
 };
 
-/** 归一化用户数据，保证运行时永远拿到合法形状 */
+/** 归一化用户数据，保证运行时永远拿到合法形状（旧版多余翻译字段自动忽略）。 */
 export function normalizeSettings(raw: unknown): NyaReaderSettings {
 	const v = (raw ?? {}) as Partial<NyaReaderSettings>;
 	const t = (v.translation ?? {}) as Partial<TranslationSettings>;
@@ -95,20 +65,8 @@ export function normalizeSettings(raw: unknown): NyaReaderSettings {
 		translation: {
 			sourceLanguage: strOr(t.sourceLanguage, DEFAULT_TRANSLATION_SETTINGS.sourceLanguage),
 			targetLanguage: strOr(t.targetLanguage, DEFAULT_TRANSLATION_SETTINGS.targetLanguage),
-			mode: t.mode === "online" ? "online" : "offline",
-			provider: isProvider(t.provider) ? t.provider : "mtran",
-			offlineEndpoint: strOr(t.offlineEndpoint, ""),
-			offlineToken: strOr(t.offlineToken, ""),
-			openaiBaseUrl: strOr(t.openaiBaseUrl, DEFAULT_TRANSLATION_SETTINGS.openaiBaseUrl),
-			openaiApiKey: strOr(t.openaiApiKey, ""),
-			openaiModel: strOr(t.openaiModel, DEFAULT_TRANSLATION_SETTINGS.openaiModel),
-			deeplApiKey: strOr(t.deeplApiKey, ""),
-			deeplBaseUrl: strOr(t.deeplBaseUrl, DEFAULT_TRANSLATION_SETTINGS.deeplBaseUrl),
-			timeoutMs: clamp(Number(t.timeoutMs), 1000, 120000, DEFAULT_TRANSLATION_SETTINGS.timeoutMs),
-			cacheEnabled: t.cacheEnabled !== false,
-			cacheMaxEntries: clamp(Number(t.cacheMaxEntries), 10, 10000, DEFAULT_TRANSLATION_SETTINGS.cacheMaxEntries),
 		},
-		translationOfflinePromptShown: v.translationOfflinePromptShown === true,
+		translationPromptShown: v.translationPromptShown === true,
 		annotationSidecarSuffix: strOr(v.annotationSidecarSuffix, DEFAULT_SETTINGS.annotationSidecarSuffix),
 	};
 }
@@ -122,7 +80,4 @@ function strOr(v: unknown, fallback: string): string {
 }
 function isTheme(v: unknown): v is ReaderTheme {
 	return v === "light" || v === "dark" || v === "sepia";
-}
-function isProvider(v: unknown): v is TranslationProviderType {
-	return v === "openai" || v === "deepl" || v === "mtran";
 }

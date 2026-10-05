@@ -3,7 +3,7 @@
  * 职责：
  * - 打开书籍（解析 -> 构建 BookModel -> 按格式创建引擎 -> 恢复进度）
  * - 转发用户操作（翻页/跳转/主题/版式）到引擎
- * - 划词 -> 翻译（TranslationService）
+ * - 划词 -> 翻译（委托 NyaLingo）
  * - 划词 -> 批注（PDF 写文件+备份，其余写侧车）
  * - 进度持久化（BookIndexService）
  * 视图层只与本 Controller 通信。
@@ -90,6 +90,7 @@ export class ReaderController {
 				path: file.path,
 				format,
 				title: book.title,
+				author: book.author,
 				lastOpenedAt: Date.now(),
 				progress: entry?.progress,
 			});
@@ -223,12 +224,22 @@ export class ReaderController {
 		return base;
 	}
 
-	/** 划词翻译。 */
+	/** 划词翻译：委托 NyaLingo 共享翻译服务，并记录翻译历史。 */
 	async translateSelection(text: string, to?: string): Promise<string> {
-		return this.plugin.translation.translateSelection(text, {
-			to,
-			bookFingerprint: this.book?.fingerprint,
-		});
+		const result = await this.plugin.lingo.translate(text, { to });
+		try {
+			await this.plugin.history.add({
+				sourceText: text,
+				translatedText: result,
+				from: this.plugin.settings.translation.sourceLanguage,
+				to: to ?? this.plugin.settings.translation.targetLanguage,
+				provider: "nyalingo",
+				bookFingerprint: this.book?.fingerprint,
+			});
+		} catch {
+			// 历史写入失败不影响翻译结果
+		}
+		return result;
 	}
 
 	/** 划词批注：PDF 写文件本体；其他格式写侧车。 */

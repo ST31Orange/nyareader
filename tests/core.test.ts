@@ -2,7 +2,6 @@
 import { describe, it, expect } from "vitest";
 import { splitTranslationChunks } from "../src/utils/text";
 import { sha256Hex, fastFingerprint } from "../src/utils/hash";
-import { translationKey } from "../src/services/translation/TranslationCache";
 import { normalizeSettings } from "../src/settings";
 
 describe("splitTranslationChunks", () => {
@@ -48,25 +47,20 @@ describe("hash utils", () => {
 	});
 });
 
-describe("translationKey", () => {
-	it("相同输入得到相同键", () => {
-		expect(translationKey("abc", "auto", "zh-Hans", "openai")).toBe(translationKey("abc", "auto", "zh-Hans", "openai"));
-	});
-	it("不同 provider 键不同", () => {
-		expect(translationKey("abc", "auto", "zh-Hans", "openai")).not.toBe(translationKey("abc", "auto", "zh-Hans", "deepl"));
-	});
-});
-
 describe("normalizeSettings", () => {
 	it("空输入返回默认值", () => {
 		const s = normalizeSettings(null);
 		expect(s.reader.fontSize).toBe(18);
 		expect(s.translation.targetLanguage).toBe("zh-Hans");
-		expect(s.translation.mode).toBe("offline");
+		expect(s.translation.sourceLanguage).toBe("auto");
 	});
 	it("清洗非法数值", () => {
-		const s = normalizeSettings({ reader: { fontSize: 999 }, translation: { timeoutMs: -5 } });
+		const s = normalizeSettings({ reader: { fontSize: 999 } });
 		expect(s.reader.fontSize).toBe(40);
-		expect(s.translation.timeoutMs).toBe(1000);
+	});
+	it("忽略旧版多余翻译字段", () => {
+		const s = normalizeSettings({ translation: { targetLanguage: "ja", mode: "online", timeoutMs: -5 } });
+		expect(s.translation.targetLanguage).toBe("ja");
+		expect((s.translation as unknown as Record<string, unknown>).mode).toBeUndefined();
 	});
 });

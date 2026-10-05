@@ -1,14 +1,16 @@
 /**
  * NyaReader 设置面板。
- * 翻译区按"用户最容易理解"组织：默认中英互译、离线翻译与在线翻译两块、
- * 提供"粘贴既有 MTranServer 配置"导入入口。
+ * 翻译区（v0.2.0）：引擎配置委托独立插件 NyaLingo 一份，
+ * 本面板只负责：目标语言（UI 级）、NyaLingo 安装状态、跳转/向导、测试连接、清缓存。
  */
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type NyaReaderPlugin from "./main";
-import type { TranslationProviderType } from "./settings";
 
 export class NyaReaderSettingTab extends PluginSettingTab {
-	constructor(app: App, private plugin: NyaReaderPlugin) {
+	constructor(
+		app: App,
+		private plugin: NyaReaderPlugin
+	) {
 		super(app, plugin);
 	}
 
@@ -54,21 +56,12 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 				});
 		});
 
-		// ---------- 翻译 ----------
+		// ---------- 翻译（委托 NyaLingo） ----------
 		containerEl.createEl("h3", { text: "翻译" });
-		new Setting(containerEl)
-			.setName("翻译模式")
-			.setDesc("离线翻译（本地引擎，如 MTranServer）/ 在线翻译（OpenAI 兼容 / DeepL）")
-			.addDropdown((d) => {
-				d.addOptions({ offline: "离线翻译（本地引擎）", online: "在线翻译（API）" })
-					.setValue(this.plugin.settings.translation.mode)
-					.onChange(async (v) => {
-						this.plugin.settings.translation.mode = v as "offline" | "online";
-						await this.plugin.saveSettings();
-						await this.plugin.translation.reloadConfig();
-						this.display();
-					});
-			});
+		containerEl.createEl("p", {
+			cls: "nyareader-hint",
+			text: "翻译引擎由独立插件 NyaLingo 提供（离线 MTranServer / 在线 OpenAI·DeepL），这里只设置阅读器侧的目标语言与入口。",
+		});
 
 		new Setting(containerEl).setName("目标语言").setDesc("默认中英互译（译文语言）").addDropdown((d) => {
 			d.addOptions({
@@ -89,155 +82,39 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 				});
 		});
 
-		const mode = this.plugin.settings.translation.mode;
-		if (mode === "offline") {
-			this.renderOfflineSection(containerEl);
-		} else {
-			this.renderOnlineSection(containerEl);
-		}
-
-		// ---------- 翻译高级 ----------
-		containerEl.createEl("h4", { text: "翻译高级" });
-		new Setting(containerEl).setName("请求超时（毫秒）").addSlider((s) => {
-			s.setLimits(1000, 60000, 1000)
-				.setValue(this.plugin.settings.translation.timeoutMs)
-				.setDynamicTooltip()
-				.onChange(async (v) => {
-					this.plugin.settings.translation.timeoutMs = v;
-					await this.plugin.saveSettings();
-				});
-		});
-		new Setting(containerEl).setName("启用翻译缓存").setDesc("重复文本不重复请求").addToggle((t) => {
-			t.setValue(this.plugin.settings.translation.cacheEnabled).onChange(async (v) => {
-				this.plugin.settings.translation.cacheEnabled = v;
-				await this.plugin.saveSettings();
-			});
-		});
-		new Setting(containerEl).setName("测试翻译连接").setDesc("使用当前配置发送一条测试请求").addButton((b) => {
-			b.setButtonText("测试").setCta().onClick(async () => {
-				b.setDisabled(true);
-				b.setButtonText("测试中…");
-				const ok = await this.plugin.translation.healthCheck();
-				b.setDisabled(false);
-				b.setButtonText("测试");
-				new Notice(ok ? "NyaReader：翻译连接正常。" : "NyaReader：翻译连接不可用，请检查配置。", 6000);
-			});
-		});
-		new Setting(containerEl).setName("清空翻译缓存").addButton((b) => {
-			b.setButtonText("清空").setWarning().onClick(async () => {
-				await this.plugin.translation.clearCache();
-				new Notice("NyaReader：翻译缓存已清空。");
-			});
-		});
-	}
-
-	private renderOfflineSection(el: HTMLElement): void {
-		el.createEl("h4", { text: "离线翻译（本地引擎）" });
-		new Setting(el)
-			.setName("不会装？")
-			.setDesc("打开分步安装向导：识别系统、下载桌面端、启动服务、一键测试连接")
+		// 状态：NyaLingo 是否已安装启用
+		const available = this.plugin.lingo.isAvailable();
+		new Setting(containerEl)
+			.setName("NyaLingo 翻译服务")
+			.setDesc(available ? "已安装并启用 ✅" : "未检测到 NyaLingo 插件，翻译不可用。点击右侧打开安装向导/设置。")
 			.addButton((b) =>
-				b.setButtonText("打开安装向导").setCta().onClick(() => {
-					this.plugin.openTranslationSetup();
+				b.setButtonText(available ? "打开 NyaLingo 设置" : "安装 / 配置 NyaLingo").setCta().onClick(() => {
+					this.plugin.lingo.openSettingsOrWizard();
 				})
 			);
-		new Setting(el)
-			.setName("离线引擎地址")
-			.setDesc("例如 http://127.0.0.1:8989 （MTranServer）")
-			.addText((t) => {
-				t.setPlaceholder("http://127.0.0.1:8989")
-					.setValue(this.plugin.settings.translation.offlineEndpoint)
-					.onChange(async (v) => {
-						this.plugin.settings.translation.offlineEndpoint = v.trim();
-						await this.plugin.saveSettings();
-					});
-			});
-		new Setting(el)
-			.setName("API Token（可选）")
-			.setDesc("离线引擎若需要鉴权则填写")
-			.addText((t) => {
-				t.inputEl.type = "password";
-				t.setValue(this.plugin.settings.translation.offlineToken).onChange(async (v) => {
-					this.plugin.settings.translation.offlineToken = v.trim();
-					await this.plugin.saveSettings();
-				});
-			});
-		new Setting(el)
-			.setName("导入既有 MTranServer 配置")
-			.setDesc("粘贴 NyaHome / 旧插件 data.json 中 translation 对象的 JSON，自动填充地址与 Token。")
-			.addTextArea((ta) => {
-				ta.setPlaceholder('{"endpoint":"http://127.0.0.1:8989","token":"..."}').onChange(async (raw) => {
-					try {
-						const data = JSON.parse(raw) as { endpoint?: string; token?: string; targetLanguage?: string };
-						if (data.endpoint) this.plugin.settings.translation.offlineEndpoint = data.endpoint.trim();
-						if (data.token) this.plugin.settings.translation.offlineToken = data.token.trim();
-						if (data.targetLanguage) this.plugin.settings.translation.targetLanguage = data.targetLanguage;
-						await this.plugin.saveSettings();
-						new Notice("NyaReader：已导入 MTranServer 配置。");
-					} catch {
-						new Notice("NyaReader：JSON 解析失败，请检查粘贴内容。", 4000);
-					}
-				});
-			});
-	}
 
-	private renderOnlineSection(el: HTMLElement): void {
-		el.createEl("h4", { text: "在线翻译" });
-		new Setting(el)
-			.setName("服务商")
-			.addDropdown((d) => {
-				d.addOptions({ openai: "OpenAI 兼容 API", deepl: "DeepL" })
-					.setValue(this.plugin.settings.translation.provider)
-					.onChange(async (v) => {
-						this.plugin.settings.translation.provider = v as TranslationProviderType;
-						await this.plugin.saveSettings();
-						await this.plugin.translation.reloadConfig();
-					});
-			});
-		if (this.plugin.settings.translation.provider === "openai") {
-			new Setting(el)
-				.setName("API 地址")
-				.setDesc("OpenAI 兼容 base URL，例如 https://api.openai.com/v1 或自定义中转")
-				.addText((t) =>
-					t.setValue(this.plugin.settings.translation.openaiBaseUrl).onChange(async (v) => {
-						this.plugin.settings.translation.openaiBaseUrl = v.trim();
-						await this.plugin.saveSettings();
+		if (available) {
+			new Setting(containerEl)
+				.setName("测试翻译连接")
+				.setDesc("发送一条测试请求验证引擎可用")
+				.addButton((b) =>
+					b.setButtonText("测试").onClick(async () => {
+						b.setDisabled(true);
+						b.setButtonText("测试中…");
+						const r = await this.plugin.lingo.testConnection();
+						b.setDisabled(false);
+						b.setButtonText("测试");
+						new Notice(r.ok ? "NyaReader：翻译连接正常 ✅" : `NyaReader：${r.detail ?? "连接失败"}`, 6000);
 					})
 				);
-			new Setting(el).setName("API Key").addText((t) => {
-				t.inputEl.type = "password";
-				t.setValue(this.plugin.settings.translation.openaiApiKey).onChange(async (v) => {
-					this.plugin.settings.translation.openaiApiKey = v.trim();
-					await this.plugin.saveSettings();
-				});
-			});
-			new Setting(el)
-				.setName("模型名称")
-				.addText((t) =>
-					t.setValue(this.plugin.settings.translation.openaiModel).onChange(async (v) => {
-						this.plugin.settings.translation.openaiModel = v.trim();
-						await this.plugin.saveSettings();
-					})
-				);
-		} else {
-			new Setting(el)
-				.setName("DeepL API Key")
-				.addText((t) => {
-					t.inputEl.type = "password";
-					t.setValue(this.plugin.settings.translation.deeplApiKey).onChange(async (v) => {
-						this.plugin.settings.translation.deeplApiKey = v.trim();
-						await this.plugin.saveSettings();
-					});
-				});
-			new Setting(el)
-				.setName("DeepL API 地址")
-				.addText((t) =>
-					t.setValue(this.plugin.settings.translation.deeplBaseUrl).onChange(async (v) => {
-						this.plugin.settings.translation.deeplBaseUrl = v.trim();
-						await this.plugin.saveSettings();
+			new Setting(containerEl)
+				.setName("清空翻译缓存")
+				.addButton((b) =>
+					b.setButtonText("清空").setWarning().onClick(async () => {
+						await this.plugin.lingo.clearCache();
+						new Notice("NyaReader：翻译缓存已清空。");
 					})
 				);
 		}
 	}
 }
-

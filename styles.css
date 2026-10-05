@@ -239,3 +239,224 @@
 	white-space: pre-line;
 	font-size: 13px;
 }
+
+/* ===== 书架主页 ===== */
+.nyareader-bookshelf {
+	padding: 20px 24px 40px;
+	overflow-y: auto;
+	height: 100%;
+	background: var(--background-primary);
+}
+.nyareader-shelf-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	flex-wrap: wrap;
+	margin-bottom: 16px;
+}
+.nyareader-shelf-title h2 {
+	margin: 0 0 2px;
+	font-size: 20px;
+}
+.nyareader-shelf-sub {
+	color: var(--text-muted);
+	font-size: 13px;
+}
+.nyareader-shelf-actions {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	flex-wrap: wrap;
+}
+.nyareader-shelf-btn {
+	padding: 4px 12px;
+	border-radius: 6px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	color: var(--text-normal);
+	cursor: pointer;
+	font-size: 13px;
+}
+.nyareader-shelf-btn:hover {
+	background: var(--background-modifier-hover);
+}
+.nyareader-shelf-sort {
+	background: var(--background-primary);
+	color: var(--text-normal);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	padding: 3px 6px;
+	font-size: 12px;
+}
+.nyareader-shelf-empty {
+	padding: 40px 20px;
+	text-align: center;
+	color: var(--text-muted);
+	font-size: 15px;
+	line-height: 2;
+	white-space: pre-line;
+}
+.nyareader-shelf-grid {
+	display: flex;
+	flex-direction: column;
+	gap: 20px;
+}
+.nyareader-shelf-zone {
+	border: 1px dashed var(--background-modifier-border);
+	border-radius: 10px;
+	padding: 14px;
+	transition: border-color 0.15s, background 0.15s;
+}
+.nyareader-shelf-zone.nyareader-drag-over {
+	border-color: var(--text-accent);
+	background: var(--background-modifier-hover);
+}
+.nyareader-shelf-zone-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 10px;
+}
+.nyareader-shelf-zone-header h3 {
+	margin: 0;
+	font-size: 15px;
+}
+.nyareader-shelf-zone-actions {
+	display: flex;
+	gap: 8px;
+}
+.nyareader-shelf-link {
+	background: transparent;
+	border: none;
+	color: var(--text-muted);
+	cursor: pointer;
+	font-size: 12px;
+	text-decoration: underline;
+}
+.nyareader-shelf-link:hover {
+	color: var(--text-normal);
+}
+.nyareader-shelf-cards {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+	gap: 12px;
+}
+.nyareader-shelf-zone-empty {
+	color: var(--text-muted);
+	font-size: 12px;
+	padding: 6px 0;
+}
+.nyareader-shelf-card {
+	position: relative;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background: var(--background-secondary);
+	padding: 10px;
+	cursor: pointer;
+	transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.nyareader-shelf-card:hover {
+	transform: translateY(-2px);
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+.nyareader-shelf-cover {
+	height: 120px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--background-primary);
+	border-radius: 6px;
+	margin-bottom: 8px;
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text-muted);
+}
+.nyareader-shelf-card-info {
+	min-height: 64px;
+}
+.nyareader-shelf-card-title {
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.4;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+.nyareader-shelf-card-author {
+	font-size: 12px;
+	color: var(--text-muted);
+	margin-top: 2px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.nyareader-shelf-progress {
+	height: 4px;
+	background: var(--background-modifier-border);
+	border-radius: 2px;
+	margin-top: 6px;
+	overflow: hidden;
+}
+.nyareader-shelf-progress-bar {
+	height: 100%;
+	background: var(--text-accent);
+	border-radius: 2px;
+}
+.nyareader-shelf-card-meta {
+	font-size: 11px;
+	color: var(--text-muted);
+	margin-top: 4px;
+}
+.nyareader-shelf-card-del {
+	position: absolute;
+	top: 6px;
+	right: 6px;
+	width: 22px;
+	height: 22px;
+	border: none;
+	border-radius: 50%;
+	background: rgba(0, 0, 0, 0.45);
+	color: #fff;
+	cursor: pointer;
+	font-size: 12px;
+	opacity: 0;
+	transition: opacity 0.12s ease;
+	line-height: 1;
+}
+.nyareader-shelf-card:hover .nyareader-shelf-card-del {
+	opacity: 1;
+}
+.nyareader-shelf-zone-empty-drop {
+	min-height: 90px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-muted);
+	font-size: 14px;
+	cursor: pointer;
+}
+
+/* ===== 阅读布局 v0.2.0：标题栏 + 折叠工具栏 ===== */
+/* Obsidian 标题栏上的按钮（addAction 返回）激活态：翻译按钮变色 */
+.nyareader-titlebar-action.is-active svg {
+	color: var(--text-accent);
+	stroke: var(--text-accent);
+}
+.nyareader-titlebar-action.is-active {
+	color: var(--text-accent);
+}
+
+/* 细高可折叠工具栏：默认收起（隐藏），展开时显示 */
+.nyareader-toolbar.is-collapsed {
+	display: none;
+}
+.nyareader-toolbar {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+	padding: 3px 12px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	flex-wrap: wrap;
+}
