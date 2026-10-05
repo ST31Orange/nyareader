@@ -132,12 +132,27 @@ export default class NyaReaderPlugin extends Plugin {
 		}
 		// 复制到 vault 可见的 nyareader/library，保证后续按 vault 路径读写、批注、书架索引
 		const dir = "nyareader/library";
-		const destPath = `nyareader/library/${sanitizeFileName(file.name)}`;
 		await this.app.vault.createFolder(dir).catch(() => undefined);
+		const destPath = await this.uniqueBookPath(file.name);
 		await this.app.vault.createBinary(destPath, buf);
 		const vaultFile = this.app.vault.getAbstractFileByPath(destPath);
 		if (vaultFile instanceof TFile) await this.openBookFile(vaultFile);
 		else new Notice("NyaReader：文件写入失败。");
+	}
+
+	/** 生成不冲突的书架路径：同名文件自动加 (1)、(2)… 后缀，避免覆盖。 */
+	private async uniqueBookPath(fileName: string): Promise<string> {
+		const safe = sanitizeFileName(fileName);
+		const dot = safe.lastIndexOf(".");
+		const stem = dot > 0 ? safe.slice(0, dot) : safe;
+		const ext = dot > 0 ? safe.slice(dot) : "";
+		let candidate = `nyareader/library/${safe}`;
+		let i = 1;
+		while (this.app.vault.getAbstractFileByPath(candidate)) {
+			candidate = `nyareader/library/${stem} (${i})${ext}`;
+			i++;
+		}
+		return candidate;
 	}
 
 	async openBookFile(file: TFile): Promise<void> {
