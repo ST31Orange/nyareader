@@ -2,8 +2,11 @@
  * NyaReader 书架主页（ItemView）。
  * 工作模式 A：从书架入口进入 -> 点书 -> 阅读模式。
  * 功能：新建区域（文件夹）、拖拽/导入电子书、删除、排序、卡片（标题+作者+进度+最近读）。
+ *
+ * 书架目录：vault 可见路径 nyareader/library（非 .obsidian），保证文件被 vault 索引、
+ * 可经 getAbstractFileByPath 打开；mkdir 递归创建父目录。
  */
-import { ItemView, Notice, TFile, WorkspaceLeaf } from "obsidian";
+import { ItemView, Notice, TFile, TFolder, WorkspaceLeaf } from "obsidian";
 import type NyaReaderPlugin from "../main";
 import { BookshelfService, BookshelfSort, splitPath } from "../services/storage/BookshelfService";
 import type { BookshelfFolder } from "../services/storage/BookshelfService";
@@ -14,6 +17,9 @@ const SORT_OPTIONS: Array<{ value: BookshelfSort; label: string }> = [
 	{ value: "title", label: "书名" },
 	{ value: "progress", label: "阅读进度" },
 ];
+
+/** 书架根目录（vault 相对路径）。 */
+export const BOOKSHELF_LIBRARY_DIR = "nyareader/library";
 
 export class BookshelfView extends ItemView {
 	private rootEl!: HTMLElement;
@@ -45,14 +51,41 @@ export class BookshelfView extends ItemView {
 
 		this.service = new BookshelfService(
 			{
-				list: (p) => this.plugin.app.vault.adapter.list(p),
-				mkdir: (p) => this.plugin.app.vault.adapter.mkdir(p),
-				exists: (p) => this.plugin.app.vault.adapter.exists(p),
-				readBinary: (p) => this.plugin.app.vault.adapter.readBinary(p),
-				writeBinary: (p, d) => this.plugin.app.vault.adapter.writeBinary(p, d),
-				remove: (p) => this.plugin.app.vault.adapter.remove(p),
+				list: async (p) => {
+					const prefix = p.replace(/\/+$/, "") + "/";
+					const files = this.plugin.app.vault.getFiles().filter((f) => f.path.startsWith(prefix)).map((f) => f.path);
+					const folders = this.plugin.app.vault
+						.getAllLoadedFiles()
+						.filter((f) => f instanceof TFolder && f.path.startsWith(prefix))
+						.map((f) => f.path);
+					return { files, folders };
+				},
+				mkdir: async (p) => {
+					const parts = p.replace(/\/+$/, "").split("/").filter(Boolean);
+					let cur = "";
+					for (const part of parts) {
+						cur = cur ? `${cur}/${part}` : part;
+						if (!this.plugin.app.vault.getAbstractFileByPath(cur)) {
+							await this.plugin.app.vault.createFolder(cur).catch(() => undefined);
+						}
+					}
+				},
+				exists: async (p) => !!this.plugin.app.vault.getAbstractFileByPath(p),
+				readBinary: async (p) => {
+					const f = this.plugin.app.vault.getAbstractFileByPath(p);
+					if (f instanceof TFile) return await this.plugin.app.vault.readBinary(f);
+					throw new Error(`文件不存在: ${p}`);
+				},
+				writeBinary: async (p, d) => {
+					await this.mkdirpParent(p);
+					await this.plugin.app.vault.createBinary(p, d);
+				},
+				remove: async (p) => {
+					const f = this.plugin.app.vault.getAbstractFileByPath(p);
+					if (f) await this.plugin.app.vault.delete(f);
+				},
 			},
-			`${this.plugin.manifest.dir ?? ""}library`,
+			BOOKSHELF_LIBRARY_DIR,
 			(path) => {
 				const entry = this.plugin.bookIndex.list().find((e) => e.path === path);
 				if (!entry) return undefined;
@@ -72,6 +105,21 @@ export class BookshelfView extends ItemView {
 	async onClose(): Promise<void> {
 		this.rootEl?.empty();
 		return Promise.resolve();
+	}
+
+	/** 确保父目录存在（递归）。 */
+	private async mkdirpParent(filePath: string): Promise<void> {
+		const idx = filePath.lastIndexOf("/");
+		if (idx <= 0) return;
+		const parent = filePath.slice(0, idx);
+		const parts = parent.split("/").filter(Boolean);
+		let cur = "";
+		for (const part of parts) {
+			cur = cur ? `${cur}/${part}` : part;
+			if (!this.plugin.app.vault.getAbstractFileByPath(cur)) {
+				await this.plugin.app.vault.createFolder(cur).catch(() => undefined);
+			}
+		}
 	}
 
 	private async render(): Promise<void> {

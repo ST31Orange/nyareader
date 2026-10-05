@@ -36,7 +36,7 @@ export default class NyaReaderPlugin extends Plugin {
 				write: (p, d) => this.app.vault.adapter.write(p, d),
 				mkdir: (p) => this.app.vault.adapter.mkdir(p),
 			},
-			this.manifest.dir ?? ""
+			this.manifest.dir ? `${this.manifest.dir}/` : ""
 		);
 		await this.history.load();
 
@@ -130,11 +130,11 @@ export default class NyaReaderPlugin extends Plugin {
 			new Notice("NyaReader：不支持的电子书格式。");
 			return;
 		}
-		// 复制到 vault（插件数据目录下的 library），保证后续按 vault 路径读写与批注
-		const dir = `${this.manifest.dir ?? ""}library/`;
-		const destPath = `${dir}${sanitizeFileName(file.name)}`;
-		await this.app.vault.adapter.mkdir(dir).catch(() => undefined);
-		await this.app.vault.adapter.writeBinary(destPath, buf);
+		// 复制到 vault 可见的 nyareader/library，保证后续按 vault 路径读写、批注、书架索引
+		const dir = "nyareader/library";
+		const destPath = `nyareader/library/${sanitizeFileName(file.name)}`;
+		await this.app.vault.createFolder(dir).catch(() => undefined);
+		await this.app.vault.createBinary(destPath, buf);
 		const vaultFile = this.app.vault.getAbstractFileByPath(destPath);
 		if (vaultFile instanceof TFile) await this.openBookFile(vaultFile);
 		else new Notice("NyaReader：文件写入失败。");

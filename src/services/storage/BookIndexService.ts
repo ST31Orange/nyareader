@@ -41,7 +41,8 @@ export class BookIndexService {
 	}
 
 	private indexPath(): string {
-		return `${this.plugin.manifest.dir ?? ""}${INDEX_FILE}`.replace(/\/+/g, "/").replace(/^\/|\/$/g, "");
+		const dir = this.plugin.manifest.dir ? `${this.plugin.manifest.dir}/` : "";
+		return `${dir}${INDEX_FILE}`.replace(/\/+/g, "/").replace(/^\/|\/$/g, "");
 	}
 
 	private async persist(): Promise<void> {
