@@ -158,11 +158,14 @@ export class PdfEngine implements IReaderEngine {
 	}
 
 	private attachSelectionHandler(): void {
-		// 文本层文字可选中，选中变化由视图层轮询 getSelection 即可
-		// 此处仅监听点击清除（后续扩展）
-		this.textLayerHost.addEventListener("click", () => {
-			// 保持选中以支持划词翻译，不做清除
-		});
+		// 文本层文字可选中：mouseup/touchend 后读取当前选区并对外发射
+		// "selection" 事件，供视图层实现“即划即翻译”。与 EPUB/TXT 引擎保持一致。
+		const emitSelection = (): void => {
+			const sel = this.getSelection();
+			if (sel) this.emitter.emit("selection", { text: sel.text });
+		};
+		this.textLayerHost.addEventListener("mouseup", emitSelection);
+		this.textLayerHost.addEventListener("touchend", emitSelection);
 	}
 
 	private async renderPage(pageNumber: number): Promise<void> {
