@@ -15,6 +15,7 @@ import { formatFromExtension, sniffFormat, IBookParser } from "../services/books
 import type { IReaderEngine } from "../services/books/IReaderEngine";
 import { PdfParser } from "../services/books/formats/pdf/PdfParser";
 import { PdfEngine } from "../services/books/formats/pdf/PdfEngine";
+import { initPdfWorker } from "../services/books/formats/pdf/pdfWorker";
 import { EpubParser } from "../services/books/formats/epub/EpubParser";
 import { EpubEngine } from "../services/books/formats/epub/EpubEngine";
 import { TxtParser } from "../services/books/formats/txt/TxtParser";
@@ -76,6 +77,11 @@ export class ReaderController {
 			if (format === "unknown") {
 				this.events.onError("不支持的电子书格式。");
 				return;
+			}
+			// PDF 解析（PdfParser.parse）也会调用 pdfjs.getDocument，必须先初始化
+			// workerSrc，否则会抛 "No GlobalWorkerOptions.workerSrc specified"。
+			if (format === "pdf") {
+				await initPdfWorker(this.plugin);
 			}
 			const parser = this.parserFor(format);
 			if (!parser) {
