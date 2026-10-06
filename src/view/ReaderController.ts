@@ -88,7 +88,10 @@ export class ReaderController {
 				this.events.onError(`格式 ${format} 的解析器尚未实现（规划中）。`);
 				return;
 			}
-			const book = await parser.parse({ fingerprint, path: file.path, format, buffer });
+			// pdf.js 会把传入的 ArrayBuffer 转移（detach）给 worker，解析后原
+			// buffer 字节被清空；渲染引擎还要复用同一 buffer，所以解析时传副本，
+			// 否则 PdfEngine 二次 getDocument 会抛 "detached ArrayBuffer"。
+			const book = await parser.parse({ fingerprint, path: file.path, format, buffer: buffer.slice(0) });
 			// 记录/更新索引
 			const entry = this.plugin.bookIndex.get(fingerprint);
 			await this.plugin.bookIndex.upsert({
