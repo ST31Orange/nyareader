@@ -46,8 +46,11 @@ export class PdfEngine implements IReaderEngine {
 	async mount(container: HTMLElement): Promise<void> {
 		this.container = container;
 		this.canvasHost = container.createDiv({ cls: "nyareader-pdf-canvas-host" });
-		this.overlayHost = container.createDiv({ cls: "nyareader-pdf-overlay" });
-		this.textLayerHost = container.createDiv({ cls: "nyareader-pdf-textlayer" });
+		// 文本层与批注层必须内嵌在 canvasHost 内，才能与画布严格对齐；
+		// 之前它们是 canvasHost 的兄弟节点，absolute 定位相对的是外层容器，
+		// 导致文本层/批注与页面错位。
+		this.textLayerHost = this.canvasHost.createDiv({ cls: "nyareader-pdf-textlayer" });
+		this.overlayHost = this.canvasHost.createDiv({ cls: "nyareader-pdf-overlay" });
 		this.pageLabelEl = container.createDiv({ cls: "nyareader-pdf-page-label" });
 
 		try {
@@ -167,20 +170,29 @@ export class PdfEngine implements IReaderEngine {
 		const token = ++this.renderToken;
 		const page: PDFPageProxy = await this.doc.getPage(pageNumber);
 		const containerWidth = Math.max(this.container.clientWidth - 40, 200);
-		// 缩放以适配容器宽度；同时叠加用户 zoom
-		const base = (page.view[2] / page.view[3]) * containerWidth; // width/height ratio -> scale
 		const scale = Math.min(2, (containerWidth / page.view[2]) * this.zoom);
 		this.viewport = page.getViewport({ scale });
 
+		// 高分屏用 devicePixelRatio 提升清晰度；CSS 尺寸与 viewport 一致，
+		// 不依赖外层 100% 拉伸，避免页面显示异常。
+		const dpr = window.devicePixelRatio || 1;
+		const cssW = Math.floor(this.viewport.width);
+		const cssH = Math.floor(this.viewport.height);
+
+		// 只替换 canvas，保留内嵌的文本层/批注层
+		this.canvasHost.querySelector("canvas")?.remove();
 		const canvas = this.canvasHost.createEl("canvas");
-		canvas.width = Math.floor(this.viewport.width);
-		canvas.height = Math.floor(this.viewport.height);
-		this.canvasHost.empty();
-		this.canvasHost.appendChild(canvas);
+		canvas.width = Math.floor(this.viewport.width * dpr);
+		canvas.height = Math.floor(this.viewport.height * dpr);
+		canvas.style.width = `${cssW}px`;
+		canvas.style.height = `${cssH}px`;
+		this.canvasHost.style.width = `${cssW}px`;
+		this.canvasHost.style.height = `${cssH}px`;
 
 		const renderContext = {
 			canvasContext: canvas.getContext("2d") as CanvasRenderingContext2D,
 			viewport: this.viewport,
+			transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined,
 		};
 		try {
 			await page.render(renderContext).promise;
