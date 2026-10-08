@@ -895,11 +895,18 @@
 	border-color: var(--interactive-accent);
 	outline: none;
 }
-.nyareader-prompt-modal .nyareader-prompt-buttons {
+/* 确认弹窗/输入弹窗共用的按钮行：
+   之前只写了 .nyareader-prompt-modal 前缀，确认弹窗（nyareader-confirm-modal）
+   命不中，导致删除区域/删除书籍的两个按钮挤在一起 */
+.nyareader-prompt-buttons {
 	display: flex;
 	justify-content: flex-end;
-	gap: 8px;
-	margin-top: 14px;
+	gap: 12px;
+	margin-top: 18px;
+}
+.nyareader-prompt-buttons button {
+	min-width: 76px;
+	justify-content: center;
 }
 .nyareader-confirm-message {
 	font-size: 14px;
