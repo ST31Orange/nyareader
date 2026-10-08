@@ -654,9 +654,14 @@
 	display: flex;
 	align-items: center;
 	gap: 6px;
+	height: auto;
+	overflow: visible;
+	background: transparent;
+	margin-top: 4px;
 }
 .nyareader-shelf-card.is-compact .nyareader-shelf-progress.is-with-ext .nyareader-shelf-progress-bar {
 	flex: 1;
+	height: 4px;
 }
 /* 列表：一行书名 */
 .nyareader-shelf-card.is-list {
