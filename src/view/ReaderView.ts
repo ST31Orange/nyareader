@@ -185,6 +185,8 @@ export class ReaderView extends ItemView {
 		this.headerInfoEl?.toggleClass("is-hidden", !show);
 		if (!show) return;
 		this.pageIndicatorEl?.toggleClass("is-hidden", !caps?.pageNav);
+		// 滚动式格式没有"适应宽度/适应高度"（字号缩放），隐藏这两个档位
+		this.zoomSelectEl.toggleClass("is-scroll-format", caps?.pageNav !== true);
 		this.updatePageIndicator(engine?.currentLocation?.() ?? "1");
 	}
 
@@ -364,7 +366,33 @@ export class ReaderView extends ItemView {
 			}
 			return;
 		}
-		if (!engine.capabilities?.pageNav) return;
+		// 滚动式引擎（EPUB/MOBI/AZW3/TXT）：方向键/翻页键=滚动翻页，Home/End=首/末
+		if (!engine.capabilities?.pageNav) {
+			switch (evt.key) {
+				case "ArrowLeft":
+				case "ArrowUp":
+				case "PageUp":
+					evt.preventDefault();
+					void engine.prevPage();
+					break;
+				case "ArrowRight":
+				case "ArrowDown":
+				case "PageDown":
+					evt.preventDefault();
+					void engine.nextPage();
+					break;
+				case "Home":
+					evt.preventDefault();
+					void engine.goTo("0");
+					break;
+				case "End":
+					evt.preventDefault();
+					void engine.goTo("10000");
+					break;
+			}
+			return;
+		}
+		// PDF 分页引擎
 		switch (evt.key) {
 			case "ArrowLeft":
 			case "PageUp":

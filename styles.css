@@ -634,8 +634,8 @@
 	border-color: var(--interactive-accent);
 }
 .nyareader-shelf-cards.is-list {
-	grid-template-columns: 1fr;
-	gap: 4px;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 6px;
 }
 /* 紧凑：一半高的小卡片 */
 .nyareader-shelf-card.is-compact {
@@ -646,30 +646,25 @@
 	padding: 8px;
 	min-height: 44px;
 }
-.nyareader-shelf-card.is-compact .nyareader-shelf-cover {
-	width: 30px;
-	height: 40px;
-	margin-bottom: 0;
-	flex: none;
-}
 .nyareader-shelf-card.is-compact .nyareader-shelf-card-info {
 	min-height: 0;
 	flex: 1;
 }
-.nyareader-shelf-card.is-compact .nyareader-shelf-card-author {
-	display: none;
+.nyareader-shelf-card.is-compact .nyareader-shelf-progress.is-with-ext {
+	display: flex;
+	align-items: center;
+	gap: 6px;
 }
-.nyareader-shelf-card.is-compact .nyareader-shelf-progress {
-	margin-top: 4px;
+.nyareader-shelf-card.is-compact .nyareader-shelf-progress.is-with-ext .nyareader-shelf-progress-bar {
+	flex: 1;
 }
 /* 列表：一行书名 */
 .nyareader-shelf-card.is-list {
 	display: flex;
 	align-items: center;
 	width: 100%;
-	padding: 5px 10px;
+	padding: 4px 8px;
 	min-height: 30px;
-	margin-bottom: 2px;
 }
 .nyareader-shelf-card.is-list .nyareader-shelf-cover,
 .nyareader-shelf-card.is-list .nyareader-shelf-card-info {
@@ -690,6 +685,13 @@
 	color: var(--text-muted);
 	letter-spacing: 0.5px;
 	flex: none;
+	line-height: 1.2;
+}
+.nyareader-shelf-cover .nyareader-shelf-cover-ext {
+	font-size: 10px;
+	color: var(--text-faint);
+	letter-spacing: 1.5px;
+	font-weight: 600;
 }
 .nyareader-shelf-list-title {
 	flex: 1;
@@ -703,6 +705,12 @@
 	color: var(--text-muted);
 	font-size: 12px;
 	flex: none;
+}
+
+/* 缩放下拉：滚动式格式隐藏「适应宽度/适应高度」 */
+.nyareader-zoom-select.is-scroll-format option[value="fit-width"],
+.nyareader-zoom-select.is-scroll-format option[value="fit-height"] {
+	display: none;
 }
 .nyareader-shelf-card-del {
 	position: absolute;

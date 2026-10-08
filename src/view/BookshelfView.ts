@@ -207,9 +207,8 @@ export class BookshelfView extends ItemView {
 		card.addEventListener("click", () => void this.openBook(path));
 
 		if (mode === "list") {
-			// 列表式：一行显示书名 + 进度
+			// 列表式：一行显示书名 + 进度（网格三列）
 			const row = card.createDiv({ cls: "nyareader-shelf-list-row" });
-			row.createSpan({ cls: "nyareader-shelf-cover-ext is-mini", text: ext.toUpperCase() });
 			row.createSpan({ cls: "nyareader-shelf-list-title", text: entry?.title ?? base });
 			row.createSpan({ cls: "nyareader-shelf-list-pct", text: `${Math.round((entry?.progress?.percentage ?? 0) * 100)}%` });
 			const del = card.createEl("button", { text: "✕", cls: "nyareader-shelf-card-del" });
@@ -220,18 +219,30 @@ export class BookshelfView extends ItemView {
 			return card;
 		}
 
-		const cover = card.createDiv({ cls: "nyareader-shelf-cover" });
-		cover.createSpan({ cls: "nyareader-shelf-cover-ext", text: ext.toUpperCase() });
+		if (mode !== "compact") {
+			const cover = card.createDiv({ cls: "nyareader-shelf-cover" });
+			cover.createSpan({ cls: "nyareader-shelf-cover-ext", text: ext.toUpperCase() });
+		}
 
 		const info = card.createDiv({ cls: "nyareader-shelf-card-info" });
 		info.createDiv({ cls: "nyareader-shelf-card-title", text: entry?.title ?? base });
-		info.createDiv({ cls: "nyareader-shelf-card-author", text: entry?.author ? `作者：${entry.author}` : "未知作者" });
+		if (mode !== "compact") {
+			info.createDiv({ cls: "nyareader-shelf-card-author", text: entry?.author ? `作者：${entry.author}` : "未知作者" });
+		}
 
 		// 进度条
 		const progress = entry?.progress?.percentage ?? 0;
 		const barWrap = info.createDiv({ cls: "nyareader-shelf-progress" });
-		const bar = barWrap.createDiv({ cls: "nyareader-shelf-progress-bar" });
-		bar.style.width = `${Math.round(progress * 100)}%`;
+		if (mode === "compact") {
+			// 紧凑模式：格式标识放在进度条右下角
+			barWrap.addClass("is-with-ext");
+			const bar = barWrap.createDiv({ cls: "nyareader-shelf-progress-bar" });
+			bar.style.width = `${Math.round(progress * 100)}%`;
+			barWrap.createSpan({ cls: "nyareader-shelf-cover-ext is-mini", text: ext.toUpperCase() });
+		} else {
+			const bar = barWrap.createDiv({ cls: "nyareader-shelf-progress-bar" });
+			bar.style.width = `${Math.round(progress * 100)}%`;
+		}
 		info.createDiv({
 			cls: "nyareader-shelf-card-meta",
 			text: mode === "compact" ? `${Math.round(progress * 100)}%` : `${Math.round(progress * 100)}%${entry?.lastOpenedAt ? ` · ${this.fmtTime(entry.lastOpenedAt)}` : ""}`,

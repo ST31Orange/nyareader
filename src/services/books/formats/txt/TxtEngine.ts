@@ -13,7 +13,7 @@
  *   因此进度、跳转与滚动位置都基于真实布局；
  * - 只渲染视口上下各一屏范围内的段落，超大 TXT 也不会造成巨量 DOM。
  */
-import type { AnnotationTarget, IReaderEngine, ReaderEngineEvents } from "../../IReaderEngine";
+import type { AnnotationTarget, IReaderEngine, ReaderEngineCapabilities, ReaderEngineEvents, ZoomMode } from "../../IReaderEngine";
 import { SimpleReaderEmitter } from "../../IReaderEngine";
 import type { BookModel, ReaderSettings } from "../../../../types";
 import type { TxtContent } from "./TxtParser";
@@ -35,12 +35,15 @@ const TOP_PAD = 16;
 
 export class TxtEngine implements IReaderEngine {
 	readonly format = "txt";
+	readonly capabilities: ReaderEngineCapabilities = { zoom: true };
 	private emitter = new SimpleReaderEmitter();
 	private container!: HTMLElement;
 	private scrollEl!: HTMLElement;
 	private spacerEl!: HTMLElement;
 	private windowEl!: HTMLElement;
 	private settings: ReaderSettings = { fontFamily: "system-ui", fontSize: 18, lineHeight: 1.8, margin: 24, theme: "light", layout: "single", scrollMode: true, pageWidth: 420 };
+	/** 文本缩放系数（叠加在设置字号上） */
+	private zoomScale = 1;
 
 	private paragraphs: string[] = [];
 	private chapters: TxtContent["chapters"] = [];
@@ -82,6 +85,15 @@ export class TxtEngine implements IReaderEngine {
 			const sel = this.getSelection();
 			if (sel) this.emitter.emit("selection", { text: sel.text });
 		});
+		this.scrollEl.addEventListener(
+			"wheel",
+			(e: WheelEvent) => {
+				if (!e.ctrlKey) return;
+				e.preventDefault();
+				this.nudgeZoom(e.deltaY > 0 ? 1 / 1.1 : 1.1);
+			},
+			{ passive: false }
+		);
 
 		this.applySettings(this.settings);
 
@@ -143,7 +155,7 @@ export class TxtEngine implements IReaderEngine {
 		this.scrollEl.toggleClass("nyareader-theme-dark", settings.theme === "dark");
 		this.scrollEl.toggleClass("nyareader-theme-sepia", settings.theme === "sepia");
 		this.scrollEl.style.fontFamily = settings.fontFamily;
-		this.scrollEl.style.fontSize = `${settings.fontSize}px`;
+		this.scrollEl.style.fontSize = `${this.effectiveFontSize()}px`;
 		this.scrollEl.style.lineHeight = `${settings.lineHeight}`;
 		this.scrollEl.style.setProperty("--nyareader-txt-margin", `${settings.margin}px`);
 		this.rebuildLayout();
@@ -171,6 +183,31 @@ export class TxtEngine implements IReaderEngine {
 		await this.goTo(target.location);
 	}
 
+	// ---------- 缩放（字号放大缩小） ----------
+
+	setZoom(mode: ZoomMode, value?: number): void {
+		if (mode === "fit-width" || mode === "fit-height") {
+			this.zoomScale = 1;
+		} else if (typeof value === "number" && value >= 0.4 && value <= 4) {
+			this.zoomScale = value;
+		}
+		this.applySettings(this.settings);
+		this.emitter.emit("zoomChanged", { mode: "custom", percent: Math.round(this.zoomScale * 100) });
+	}
+
+	getZoom(): { mode: ZoomMode; scale: number; percent: number } {
+		return { mode: "custom", scale: this.zoomScale, percent: Math.round(this.zoomScale * 100) };
+	}
+
+	private nudgeZoom(factor: number): void {
+		const next = Math.min(4, Math.max(0.4, this.getZoom().scale * factor));
+		this.setZoom("custom", next);
+	}
+
+	private effectiveFontSize(): number {
+		return Math.round(this.settings.fontSize * this.zoomScale * 10) / 10;
+	}
+
 	// ---------- 虚拟滚动核心 ----------
 
 	private scheduleRender(): void {
@@ -188,8 +225,8 @@ export class TxtEngine implements IReaderEngine {
 		this.renderedEnd = -1;
 		this.lastEmittedLocation = -1;
 		const charsPerLine = this.charsPerLine();
-		const lineHeightPx = this.settings.fontSize * this.settings.lineHeight;
-		const spacingPx = this.settings.fontSize * PARAGRAPH_SPACING_EM;
+		const lineHeightPx = this.effectiveFontSize() * this.settings.lineHeight;
+		const spacingPx = this.effectiveFontSize() * PARAGRAPH_SPACING_EM;
 		this.heights = this.paragraphs.map((p) => {
 			const lines = Math.max(1, Math.ceil(p.length / charsPerLine));
 			return lines * lineHeightPx + spacingPx;
@@ -201,7 +238,7 @@ export class TxtEngine implements IReaderEngine {
 
 	private charsPerLine(): number {
 		const width = this.contentWidth();
-		return Math.max(8, Math.floor(width / (this.settings.fontSize * CHAR_WIDTH_RATIO)));
+		return Math.max(8, Math.floor(width / (this.effectiveFontSize() * CHAR_WIDTH_RATIO)));
 	}
 
 	private contentWidth(): number {

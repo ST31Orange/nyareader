@@ -3,7 +3,7 @@
  * 支持滚动模式、主题/字号/行距/边距、选中文本、进度（按滚动比例）。
  * 与 epub.js 分离，避免重型依赖；适用于单文档格式。
  */
-import type { AnnotationTarget, IReaderEngine, ReaderEngineEvents } from "../../IReaderEngine";
+import type { AnnotationTarget, IReaderEngine, ReaderEngineEvents, ReaderEngineCapabilities, ZoomMode } from "../../IReaderEngine";
 import { SimpleReaderEmitter } from "../../IReaderEngine";
 import type { BookModel, ReaderSettings } from "../../../../types";
 import { normalizeSelectionText } from "../../../../utils/text";
@@ -25,12 +25,15 @@ export class HtmlDocEngine implements IReaderEngine {
 	get format(): string {
 		return this.opts.formatLabel ?? "html";
 	}
+	readonly capabilities: ReaderEngineCapabilities = { zoom: true };
 	private emitter = new SimpleReaderEmitter();
 	private container!: HTMLElement;
 	private iframe!: HTMLIFrameElement;
 	private settings: ReaderSettings = { fontFamily: "system-ui", fontSize: 18, lineHeight: 1.8, margin: 24, theme: "light", layout: "single", scrollMode: false, pageWidth: 420 };
 	private doc: Document | null = null;
 	private destroyed = false;
+	/** 文本缩放系数（叠加在设置字号上），默认 100% */
+	private zoomScale = 1;
 
 	constructor(private opts: HtmlDocEngineOptions) {}
 
@@ -69,10 +72,85 @@ export class HtmlDocEngine implements IReaderEngine {
 			const sel = this.getSelection();
 			if (sel) this.emitter.emit("selection", { text: sel.text });
 		});
+		// iframe 内的键盘/滚轮事件不会冒泡到父文档，必须在内容窗口内处理
+		win?.addEventListener?.("wheel", (e: WheelEvent) => {
+			if (!e.ctrlKey || !this.setZoom) return;
+			e.preventDefault();
+			this.nudgeZoom(e.deltaY > 0 ? 1 / 1.1 : 1.1);
+		}, { passive: false });
+		win?.addEventListener?.("keydown", (e: KeyboardEvent) => this.onContentKeydown(e));
 		win?.addEventListener?.("scroll", () => {
 			const pct = this.currentPercentage();
 			this.emitter.emit("locationChanged", { location: this.currentLocation(), percentage: pct });
 		}, { passive: true });
+	}
+
+	/** iframe 内容窗口内的键盘：翻页/滚动与 Ctrl 缩放。 */
+	private onContentKeydown(e: KeyboardEvent): void {
+		const mod = e.ctrlKey || e.metaKey;
+		if (mod) {
+			if (e.key === "=" || e.key === "+") {
+				e.preventDefault();
+				this.nudgeZoom(1.15);
+			} else if (e.key === "-" || e.key === "_") {
+				e.preventDefault();
+				this.nudgeZoom(1 / 1.15);
+			} else if (e.key === "0") {
+				e.preventDefault();
+				this.setZoom?.("custom", 1);
+			}
+			return;
+		}
+		const win = this.iframe.contentWindow;
+		if (!win) return;
+		switch (e.key) {
+			case "ArrowLeft":
+			case "ArrowUp":
+			case "PageUp":
+				e.preventDefault();
+				this.prevPage();
+				break;
+			case "ArrowRight":
+			case "ArrowDown":
+			case "PageDown":
+				e.preventDefault();
+				this.nextPage();
+				break;
+			case "Home":
+				e.preventDefault();
+				win.scrollTo(0, 0);
+				this.emitProgress();
+				break;
+			case "End":
+				e.preventDefault();
+				win.scrollTo(0, win.document.documentElement.scrollHeight);
+				this.emitProgress();
+				break;
+		}
+	}
+
+	setZoom(mode: ZoomMode, value?: number): void {
+		if (mode === "fit-width" || mode === "fit-height") {
+			this.zoomScale = 1;
+		} else if (typeof value === "number" && value >= 0.4 && value <= 4) {
+			this.zoomScale = value;
+		}
+		if (!this.doc) return;
+		this.reapplyStyle();
+		this.emitter.emit("zoomChanged", { mode: "custom", percent: Math.round(this.zoomScale * 100) });
+	}
+
+	getZoom(): { mode: ZoomMode; scale: number; percent: number } {
+		return { mode: "custom", scale: this.zoomScale, percent: Math.round(this.zoomScale * 100) };
+	}
+
+	private nudgeZoom(factor: number): void {
+		const next = Math.min(4, Math.max(0.4, this.getZoom().scale * factor));
+		this.setZoom("custom", next);
+	}
+
+	private effectiveFontSize(): number {
+		return Math.round(this.settings.fontSize * this.zoomScale * 10) / 10;
 	}
 
 	unmount(): void {
@@ -124,18 +202,23 @@ export class HtmlDocEngine implements IReaderEngine {
 
 	applySettings(settings: ReaderSettings): void {
 		this.settings = { ...settings };
+		this.reapplyStyle();
+	}
+
+	/** 重建注入样式（主题/字号/行距/边距/缩放统一入口）。 */
+	private reapplyStyle(): void {
 		if (!this.doc) return;
 		const styleId = "nyareader-style";
 		this.doc.getElementById(styleId)?.remove();
 		const style = this.doc.createElement("style");
 		style.id = styleId;
 		style.textContent = `
-			${THEME_CSS[settings.theme]}
-			html { font-size: ${settings.fontSize}px; }
+			${THEME_CSS[this.settings.theme]}
+			html { font-size: ${this.effectiveFontSize()}px; }
 			body {
-				font-family: ${settings.fontFamily};
-				line-height: ${settings.lineHeight};
-				margin: ${settings.margin}px ${settings.margin * 1.6}px;
+				font-family: ${this.settings.fontFamily};
+				line-height: ${this.settings.lineHeight};
+				margin: ${this.settings.margin}px ${this.settings.margin * 1.6}px;
 				padding: 0;
 				overflow-y: auto;
 			}
