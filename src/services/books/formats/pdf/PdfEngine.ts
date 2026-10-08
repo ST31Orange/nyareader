@@ -690,6 +690,14 @@ export class PdfEngine implements IReaderEngine {
 		for (const slot of this.slots) if (slot.rendered) this.paintOverlay(slot);
 	}
 
+	/** 隐藏指定批注的高亮（与存储删除同步调用）。 */
+	hideAnnotation(target: AnnotationTarget): void {
+		if (!target) return;
+		const key = this.annotationKey(target);
+		this.annotations = this.annotations.filter((a) => this.annotationKey(a) !== key);
+		for (const slot of this.slots) if (slot.rendered) this.paintOverlay(slot);
+	}
+
 	private annotationKey(target: AnnotationTarget): string {
 		const r = target.rects?.[0];
 		return `${target.location}|${target.selectedText ?? ""}|${r ? `${r.left.toFixed(1)},${r.top.toFixed(1)},${r.width.toFixed(1)}` : ""}`;

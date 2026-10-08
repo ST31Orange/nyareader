@@ -8,7 +8,7 @@
 import type { Plugin } from "obsidian";
 import type { Annotation, AnnotationKind, IAnnotationStore } from "./AnnotationModel";
 import { annotationId } from "./AnnotationModel";
-import { writePdfAnnotation, expectedSubtype } from "./PdfAnnotationWriter";
+import { writePdfAnnotation, removePdfAnnotation, expectedSubtype } from "./PdfAnnotationWriter";
 import type { PdfBackupService } from "./PdfBackupService";
 import { pdfjs } from "../books/formats/pdf/pdfWorker";
 
@@ -93,6 +93,39 @@ export class PdfInlineAnnotationStore implements IAnnotationStore {
 		// 回读校验：确认新文件可被 pdf.js 解析且含预期注释
 		await this.verify(pdfPath, bytes, input.pageIndex, input.kind);
 		return { backupPath: backup.backupPath, bytes };
+	}
+
+	/**
+	 * 删除一条 NyaReader 写入的 PDF 批注：先从文件本体移除注释，
+	 * 再更新元数据索引，最后做回读校验确认注释已消失。
+	 */
+	async deleteInPlace(pdfPath: string, annotation: Annotation): Promise<void> {
+		const backup = await this.backup.ensureBackup(pdfPath);
+		const original = await this.plugin.app.vault.adapter.readBinary(pdfPath);
+		const pageIndex = (parseInt(annotation.location, 10) || 1) - 1;
+		const bytes = await removePdfAnnotation(original, pageIndex, annotation.id);
+		await this.verifyRemoved(bytes, pageIndex, annotation.id);
+		await this.plugin.app.vault.adapter.writeBinary(pdfPath, bytes.slice().buffer as ArrayBuffer);
+		await this.remove(annotation.bookFingerprint, annotation.id);
+		void backup;
+	}
+
+	private async verifyRemoved(bytes: Uint8Array, pageIndex: number, id: string): Promise<void> {
+		const { PDFDocument, PDFArray, PDFDict, PDFName, PDFString } = await import("pdf-lib");
+		const doc = await PDFDocument.load(bytes.slice().buffer as ArrayBuffer);
+		if (doc.getPageCount() <= pageIndex) throw new Error("删除校验失败：页码越界");
+		const annots = doc.getPage(pageIndex).node.Annots();
+		if (!annots) return;
+		const arr = await doc.context.lookup(annots);
+		if (!(arr instanceof PDFArray)) return;
+		for (const ref of arr.asArray()) {
+			const dict = doc.context.lookup(ref);
+			const marker = dict instanceof PDFDict ? dict.get(PDFName.of("NyaReader")) : undefined;
+			if (marker instanceof PDFString && marker.asString() === id) {
+				throw new Error("删除校验失败：批注仍存在于 PDF 文件中");
+			}
+		}
+		await doc.save({ useObjectStreams: true });
 	}
 
 	private async verify(pdfPath: string, bytes: Uint8Array, pageIndex: number, kind: AnnotationKind): Promise<void> {

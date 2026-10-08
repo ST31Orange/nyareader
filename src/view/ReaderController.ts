@@ -42,7 +42,7 @@ export class ReaderController {
 	private engine: IReaderEngine | null = null;
 	private file: TFile | null = null;
 	private pdfInline: PdfInlineAnnotationStore | null = null;
-	private sidecar: SidecarAnnotationStore | null = null;
+	private sidecar: SidecarAnnotationStore;
 
 	private onEngineError = (payload: { message: string }): void => {
 		this.events.onError(payload.message);
@@ -278,11 +278,47 @@ export class ReaderController {
 		return annotation;
 	}
 
+	/** 列出当前书籍的全部批注（PDF 用内联索引，其余用侧车文件）。 */
+	async listAnnotations(): Promise<Annotation[]> {
+		const { book, file } = this;
+		if (!book || !file) return [];
+		if (book.format === "pdf" && this.pdfInline) {
+			return this.pdfInline.list(book.fingerprint);
+		}
+		return this.sidecar.readForBook(file.path);
+	}
+
+	/** 删除批注：PDF 从文件本体移除并隐藏高亮；侧车格式从 JSON 移除。 */
+	async removeAnnotation(id: string): Promise<void> {
+		const { book, file } = this;
+		if (!book || !file) return;
+		if (book.format === "pdf" && this.pdfInline) {
+			const ann = (await this.pdfInline.list(book.fingerprint)).find((a) => a.id === id);
+			if (!ann) return;
+			await this.pdfInline.deleteInPlace(file.path, ann);
+			this.engine?.hideAnnotation?.(ann.target);
+			return;
+		}
+		await this.sidecar.removeForBook(file.path, id);
+	}
+
+	/** 修改笔记内容。 */
+	async updateAnnotationNote(id: string, note?: string): Promise<void> {
+		const { book, file } = this;
+		if (!book || !file) return;
+		if (book.format === "pdf" && this.pdfInline) {
+			await this.pdfInline.update(id, { note });
+			return;
+		}
+		await this.sidecar.updateForBook(file.path, id, { note });
+	}
+
 	private async addPdfAnnotation(kind: AnnotationKind, note: string | undefined, target: NonNullable<ReturnType<IReaderEngine["getSelection"]>>["target"], text: string, color: string): Promise<Annotation | null> {
 		if (!target) {
 			this.events.onError("无法定位批注位置。");
 			return null;
 		}
+		const id = `nyar-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 		const pageIndex = (parseInt(target.location, 10) || 1) - 1;
 		// 使用引擎已渲染的 viewport 与页尺寸（避免重复解析 PDF）
 		const geo = this.engineGeometry();
@@ -298,6 +334,7 @@ export class ReaderController {
 			return null;
 		}
 		const result = await this.pdfInline!.applyToFile(this.file!.path, {
+			id,
 			pageIndex,
 			kind,
 			quad,
@@ -311,7 +348,7 @@ export class ReaderController {
 		// 写回文件
 		await this.plugin.app.vault.adapter.writeBinary(this.file!.path, result.bytes.slice().buffer as ArrayBuffer);
 		const annotation: Annotation = {
-			id: `ann-${Date.now()}`,
+			id,
 			bookFingerprint: this.book!.fingerprint,
 			location: target.location,
 			target,

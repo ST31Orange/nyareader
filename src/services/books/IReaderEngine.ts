@@ -69,6 +69,8 @@ export interface IReaderEngine {
 	getSelection(): { text: string; target?: AnnotationTarget } | null;
 	/** 在指定位置创建可见高亮（批注跳转用），返回是否成功 */
 	showAnnotation(target: AnnotationTarget): void;
+	/** 可选：隐藏指定批注的可见高亮（删除批注时用） */
+	hideAnnotation?(target: AnnotationTarget): void;
 	/** 获取需要加载的附加资源（pdf worker 等），由主插件统一初始化 */
 	on<E extends ReaderEngineEventName>(event: E, handler: (payload: ReaderEngineEvents[E]) => void): void;
 	off<E extends ReaderEngineEventName>(event: E, handler: (payload: ReaderEngineEvents[E]) => void): void;

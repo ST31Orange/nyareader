@@ -76,6 +76,16 @@ export class HtmlDocEngine implements IReaderEngine {
 	}
 
 	async goTo(location: string): Promise<void> {
+		// 目录锚点（MOBI 内部跳转统一改写为 #nyareader-fp-NNN）
+		if (location.startsWith("#")) {
+			const doc = this.iframe?.contentDocument;
+			const target = doc?.getElementById(location.slice(1));
+			if (target && "scrollIntoView" in target) {
+				(target as HTMLElement).scrollIntoView({ block: "start" });
+			}
+			this.emitProgress();
+			return;
+		}
 		// 定位为滚动比例（0~10000 的整数）
 		const pct = parseInt(location, 10);
 		if (Number.isNaN(pct)) return;

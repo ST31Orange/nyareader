@@ -6,11 +6,13 @@
  * - 使用 pdf-lib 的 Annotation 构造，尽量贴近标准 /Subtype。
  * - 写回后调用方应回读校验（PdfInlineAnnotationStore 负责）。
  */
-import { PDFDocument, PDFName, PDFNumber, PDFString, PDFArray, PDFDict } from "pdf-lib";
+import { PDFDocument, PDFName, PDFNumber, PDFString, PDFArray, PDFDict, PDFObject } from "pdf-lib";
 import type { Annotation, AnnotationKind } from "./AnnotationModel";
 import type { PdfPoint } from "../../utils/pdf-coords";
 
 export interface WriteAnnotationInput {
+	/** NyaReader 批注 id：写入 PDF 自定义键 /NyaReader，用于后续精确删除 */
+	id: string;
 	/** 页索引（0-based） */
 	pageIndex: number;
 	kind: AnnotationKind;
@@ -51,6 +53,7 @@ export async function writePdfAnnotation(pdfBytes: ArrayBuffer, input: WriteAnno
 	const pageRef = page.ref;
 
 	// 构造批注字典
+	const id = input.id?.replace(/[^A-Za-z0-9._-]/g, "_") || "nyareader";
 	const dict = doc.context.obj({
 		Type: "Annot",
 		Subtype: KIND_SUBTYPE[input.kind],
@@ -62,6 +65,8 @@ export async function writePdfAnnotation(pdfBytes: ArrayBuffer, input: WriteAnno
 		Contents: input.note ? PDFString.of(input.note) : PDFString.of(input.text),
 		T: input.author ? PDFString.of(input.author) : undefined,
 	});
+	// 自定义键：让“删除批注”能精确识别并移除我们写入的注释，而不误伤其他工具的批注
+	dict.set(PDFName.of("NyaReader"), PDFString.of(id));
 	// 高亮/下划线需要 QuadPoints
 	if (input.kind === "highlight" || input.kind === "underline") {
 		const quadArray = doc.context.obj([]) as PDFArray;
@@ -93,6 +98,38 @@ export async function writePdfAnnotation(pdfBytes: ArrayBuffer, input: WriteAnno
 		page.node.set(PDFName.of("Annots"), newArr);
 	}
 
+	return doc.save({ useObjectStreams: true });
+}
+
+/**
+ * 从 PDF 中删除一条由 NyaReader 写入的批注（按 /NyaReader 自定义键匹配）。
+ * 返回新二进制；若未找到匹配注释则抛出错误。
+ */
+export async function removePdfAnnotation(pdfBytes: ArrayBuffer, pageIndex: number, id: string): Promise<Uint8Array> {
+	const doc = await PDFDocument.load(pdfBytes, { updateMetadata: false });
+	const page = doc.getPage(pageIndex);
+	const annotsRef = page.node.Annots();
+	if (!annotsRef) return doc.save({ useObjectStreams: true });
+	const arr = annotsRef instanceof PDFArray ? annotsRef : ((await doc.context.lookup(annotsRef)) as PDFArray | null);
+	if (!(arr instanceof PDFArray)) return doc.save({ useObjectStreams: true });
+
+	const keep: PDFObject[] = [];
+	let removed = 0;
+	for (const ref of arr.asArray()) {
+		const dict = doc.context.lookup(ref);
+		const marker = dict instanceof PDFDict ? dict.get(PDFName.of("NyaReader")) : undefined;
+		const markerText = marker instanceof PDFString ? marker.asString() : "";
+		if (marker && markerText === id) {
+			removed++;
+			continue;
+		}
+		keep.push(ref);
+	}
+	if (removed === 0) throw new Error(`未找到 NyaReader 批注（id=${id}），已停止删除以避免误删其他批注`);
+	// 重建注释数组：pdf-lib 的 PDFArray 元素不可直接移除，用新数组替换
+	const newArr = doc.context.obj([]) as PDFArray;
+	for (const ref of keep) newArr.push(ref);
+	page.node.set(PDFName.of("Annots"), newArr);
 	return doc.save({ useObjectStreams: true });
 }
 

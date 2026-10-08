@@ -12,17 +12,16 @@ export class EpubParser implements IBookParser {
 	readonly format = "epub" as const;
 
 	async parse(ctx: ParseContext): Promise<BookModel> {
-		// epub.js 接受 ArrayBuffer；openEpub 返回 Promise<Book>
-		const book = await Epub(ctx.buffer).ready as unknown as { opened?: Promise<unknown> } & {
-			packaging: { metadata: { title?: string; creator?: string }; spine: unknown[] };
-			spine: { spineItems: Array<{ id: string; href: string }> };
-			navigation: { toc: EpubNavItem[] };
-		};
-		await (book.opened ?? Promise.resolve());
+		// 注意：epub.js 的 book.ready 是 Promise.all([...])，resolve 出来的是数组而非 Book，
+		// 早期实现 `await Epub(buffer).ready` 拿到数组后访问 .packaging 会抛
+		// "Cannot read properties of undefined (reading 'metadata')"。
+		const book = Epub(ctx.buffer) as unknown as EpubBookLike;
+		await book.ready;
 
-		const meta = book.packaging.metadata;
-		const spine = book.spine.spineItems.map((s, i) => ({ id: s.id || `s${i}`, href: s.href, title: undefined }));
-		const toc = buildToc(book.navigation.toc, spine);
+		const meta = book.packaging?.metadata ?? {};
+		const spineItems = book.spine?.spineItems ?? [];
+		const spine = spineItems.map((s, i) => ({ id: s.id || `s${i}`, href: s.href, title: undefined }));
+		const toc = buildToc(book.navigation?.toc ?? [], spine);
 
 		return {
 			fingerprint: ctx.fingerprint,
@@ -34,6 +33,14 @@ export class EpubParser implements IBookParser {
 			spine,
 		};
 	}
+}
+
+/** epub.js Book 的最小结构（该库无类型，做结构化降级）。 */
+interface EpubBookLike {
+	ready: Promise<unknown>;
+	packaging?: { metadata?: { title?: string; creator?: string } };
+	spine?: { spineItems?: Array<{ id?: string; href: string }> };
+	navigation?: { toc?: EpubNavItem[] };
 }
 
 interface EpubNavItem {

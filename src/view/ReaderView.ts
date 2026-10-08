@@ -14,6 +14,7 @@ import { ItemView, Menu, Notice, TFile, WorkspaceLeaf, setIcon } from "obsidian"
 import type NyaReaderPlugin from "../main";
 import { TranslationPanel } from "./TranslationPanel";
 import { ReaderController } from "./ReaderController";
+import { AnnotationListModal } from "./AnnotationListModal";
 import type { ZoomMode } from "../services/books/IReaderEngine";
 import type { BookModel } from "../types";
 import { debounce } from "../utils/debounce";
@@ -204,6 +205,7 @@ export class ReaderView extends ItemView {
 		this.translateActionEl.addClass("nyareader-titlebar-action");
 		const highlightBtn = this.addAction("highlighter", "高亮选中文本", () => void this.addHighlight());
 		const noteBtn = this.addAction("pencil", "添加笔记", () => void this.addNote());
+		this.addAction("bookmark", "管理批注", () => this.openAnnotations());
 		const moreBtn = this.addAction("ellipsis-horizontal", "更多操作", (evt) => this.openMoreMenu(evt));
 
 		// 用 addAction 返回元素的父节点定位标题栏动作区，避免硬编码内部类名
@@ -296,6 +298,7 @@ export class ReaderView extends ItemView {
 		const menu = new Menu();
 		menu.addItem((i) => i.setTitle("高亮选中文本").setIcon("highlighter").onClick(() => void this.addHighlight()));
 		menu.addItem((i) => i.setTitle("添加笔记").setIcon("pencil").onClick(() => void this.addNote()));
+		menu.addItem((i) => i.setTitle("管理批注…").setIcon("bookmark").onClick(() => this.openAnnotations()));
 		menu.addSeparator();
 		menu.addItem((i) =>
 			i.setTitle("适应宽度").setIcon("move-horizontal").onClick(() => this.controller?.currentEngine?.setZoom?.("fit-width"))
@@ -304,6 +307,18 @@ export class ReaderView extends ItemView {
 		menu.addSeparator();
 		menu.addItem((i) => i.setTitle("打开翻译设置（NyaLingo）").setIcon("settings").onClick(() => this.plugin.lingo.openSettingsOrWizard()));
 		menu.showAtMouseEvent(evt);
+	}
+
+	/** 打开批注管理弹窗（列表 / 跳转 / 编辑笔记 / 删除）。 */
+	private openAnnotations(): void {
+		const controller = this.controller;
+		if (!controller) return;
+		new AnnotationListModal(this.app, {
+			getAnnotations: () => controller.listAnnotations(),
+			onJump: (a) => void controller.currentEngine?.goTo(a.location),
+			onEditNote: (a) => controller.updateAnnotationNote(a.id, a.note),
+			onDelete: (a) => controller.removeAnnotation(a.id),
+		}).open();
 	}
 
 	/** 翻译按钮：开（激活变色 + 右侧面板）→ 再点关。 */

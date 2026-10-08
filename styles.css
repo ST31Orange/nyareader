@@ -315,6 +315,49 @@
 	border-radius: 2px;
 }
 
+/* ===== TXT 阅读区：测量修正型虚拟滚动 ===== */
+/* 引擎自建滚动容器，外层不再滚动/加内边距 */
+.nyareader-reading:has(> .nyareader-txt-scroll) {
+	padding: 0;
+	overflow: hidden;
+}
+.nyareader-txt-scroll {
+	position: relative;
+	height: 100%;
+	overflow-y: auto;
+	outline: none;
+	background: var(--background-primary);
+	scrollbar-gutter: stable;
+}
+.nyareader-txt-scroll.nyareader-theme-dark {
+	background: #1e1e1e;
+	color: #cfcfcf;
+}
+.nyareader-txt-scroll.nyareader-theme-sepia {
+	background: #f4ecd8;
+	color: #5b4636;
+}
+/* 撑出滚动高度（真实高度由引擎按前缀和写入） */
+.nyareader-txt-spacer {
+	width: 1px;
+	height: 0;
+}
+/* 当前渲染窗口：绝对定位在对应偏移处，左右留出页边距 */
+.nyareader-txt-window {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 0;
+	padding: 0 var(--nyareader-txt-margin, 24px);
+}
+.nyareader-txt-para {
+	margin: 0;
+	/* padding-bottom 计入 offsetHeight，与引擎估算保持一致（PARAGRAPH_SPACING_EM） */
+	padding: 0 0 0.6em 0;
+	text-indent: 2em;
+	word-break: break-word;
+}
+
 /* ===== 目录面板 ===== */
 .nyareader-toc-list {
 	padding: 6px;
@@ -566,4 +609,101 @@
 .nyareader-reading:focus,
 .nyareader-reading:focus-visible {
 	outline: none;
+}
+
+/* ===== 批注管理弹窗 ===== */
+.nyareader-annotations-modal {
+	min-height: 320px;
+	max-height: 72vh;
+	padding: 8px 0;
+}
+.nyareader-annotations-header {
+	padding: 4px 12px 10px;
+	font-weight: var(--font-semibold, 600);
+	color: var(--text-muted);
+	font-size: 13px;
+}
+.nyareader-annotations-list {
+	overflow-y: auto;
+	max-height: 60vh;
+}
+.nyareader-annotation-row {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	padding: 8px 12px;
+	border-top: 1px solid var(--background-modifier-border);
+}
+.nyareader-annotation-row:hover {
+	background: var(--background-modifier-hover);
+}
+.nyareader-annotation-kind {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	flex: none;
+	color: var(--text-muted);
+}
+.nyareader-annotation-kind.is-highlight {
+	color: #eabd3f;
+}
+.nyareader-annotation-kind.is-underline {
+	color: #4f9cf0;
+}
+.nyareader-annotation-kind.is-note {
+	color: #5fbf77;
+}
+.nyareader-annotation-main {
+	flex: 1;
+	min-width: 0;
+}
+.nyareader-annotation-meta {
+	font-size: 12px;
+	color: var(--text-muted);
+	margin-bottom: 2px;
+}
+.nyareader-annotation-text {
+	font-size: 13px;
+	line-height: 1.5;
+	overflow-wrap: anywhere;
+	display: -webkit-box;
+	-webkit-line-clamp: 3;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+.nyareader-annotation-note {
+	font-size: 12px;
+	color: var(--text-faint);
+	margin-top: 3px;
+	overflow-wrap: anywhere;
+}
+.nyareader-annotation-actions {
+	display: inline-flex;
+	gap: 2px;
+	flex: none;
+}
+.nyareader-annotation-action {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	padding: 0;
+	border: none;
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	border-radius: 4px;
+}
+.nyareader-annotation-action:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+.nyareader-annotations-empty {
+	padding: 32px 16px;
+	text-align: center;
+	color: var(--text-muted);
+	font-size: 13px;
 }

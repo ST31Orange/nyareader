@@ -1,7 +1,7 @@
 /** PDF 批注写入单测：生成测试 PDF -> 写注释 -> 用 pdf-lib 回读校验。 */
 import { describe, it, expect, beforeAll } from "vitest";
 import { PDFDocument, PDFDict, PDFArray, PDFName } from "pdf-lib";
-import { writePdfAnnotation, expectedSubtype } from "../src/services/annotations/PdfAnnotationWriter";
+import { writePdfAnnotation, removePdfAnnotation, expectedSubtype } from "../src/services/annotations/PdfAnnotationWriter";
 import type { PdfPoint } from "../src/utils/pdf-coords";
 
 let pdfBytes: Uint8Array;
@@ -22,6 +22,7 @@ describe("writePdfAnnotation", () => {
 			{ x: 250, y: 710 },
 		];
 		const out = await writePdfAnnotation(pdfBytes.slice().buffer as ArrayBuffer, {
+			id: "test-hl-1",
 			pageIndex: 0,
 			kind: "highlight",
 			quad,
@@ -43,10 +44,12 @@ describe("writePdfAnnotation", () => {
 		expect(dict.get(PDFName.of("Subtype"))?.toString()).toBe(`/${expectedSubtype("highlight")}`);
 		expect(dict.get(PDFName.of("QuadPoints"))).toBeTruthy();
 		expect(dict.get(PDFName.of("T"))?.toString()).toContain("NyaReader");
+		expect(dict.get(PDFName.of("NyaReader"))?.toString()).toContain("test-hl-1");
 	});
 
 	it("写入笔记（Text）注释无需 QuadPoints", async () => {
 		const out = await writePdfAnnotation(pdfBytes.slice().buffer as ArrayBuffer, {
+			id: "test-note-1",
 			pageIndex: 0,
 			kind: "note",
 			quad: [
@@ -78,12 +81,44 @@ describe("writePdfAnnotation", () => {
 			{ x: 250, y: 710 },
 		];
 		let bytes: Uint8Array = pdfBytes;
-		bytes = await writePdfAnnotation(bytes.slice().buffer as ArrayBuffer, { pageIndex: 0, kind: "highlight", quad, pageWidth: 612, pageHeight: 792, text: "a", color: "yellow" });
-		bytes = await writePdfAnnotation(bytes.slice().buffer as ArrayBuffer, { pageIndex: 0, kind: "underline", quad, pageWidth: 612, pageHeight: 792, text: "b", color: "green" });
+		bytes = await writePdfAnnotation(bytes.slice().buffer as ArrayBuffer, { id: "keep-1", pageIndex: 0, kind: "highlight", quad, pageWidth: 612, pageHeight: 792, text: "a", color: "yellow" });
+		bytes = await writePdfAnnotation(bytes.slice().buffer as ArrayBuffer, { id: "keep-2", pageIndex: 0, kind: "underline", quad, pageWidth: 612, pageHeight: 792, text: "b", color: "green" });
 		const doc = await PDFDocument.load(bytes);
 		const page = doc.getPage(0);
 		const annots = (await doc.context.lookup(page.node.Annots()!)) as PDFArray;
 		expect(annots.size()).toBe(2);
+	});
+});
+
+describe("removePdfAnnotation", () => {
+	it("删除指定 /NyaReader id 的注释并保留其他批注", async () => {
+		const quad: PdfPoint[] = [
+			{ x: 100, y: 690 },
+			{ x: 250, y: 690 },
+			{ x: 100, y: 710 },
+			{ x: 250, y: 710 },
+		];
+		let bytes: Uint8Array = pdfBytes;
+		bytes = await writePdfAnnotation(bytes.slice().buffer as ArrayBuffer, { id: "del-me", pageIndex: 0, kind: "highlight", quad, pageWidth: 612, pageHeight: 792, text: "a", color: "yellow" });
+		bytes = await writePdfAnnotation(bytes.slice().buffer as ArrayBuffer, { id: "stay-put", pageIndex: 0, kind: "underline", quad, pageWidth: 612, pageHeight: 792, text: "b", color: "green" });
+
+		const out = await removePdfAnnotation(bytes.slice().buffer as ArrayBuffer, 0, "del-me");
+		const doc = await PDFDocument.load(out);
+		const annots = (await doc.context.lookup(doc.getPage(0).node.Annots()!)) as PDFArray;
+		expect(annots.size()).toBe(1);
+		const dict = doc.context.lookup(annots.get(0)) as PDFDict;
+		expect(dict.get(PDFName.of("NyaReader"))?.toString()).toContain("stay-put");
+	});
+
+	it("找不到匹配 id 时抛错，避免误删其他批注", async () => {
+		const quad: PdfPoint[] = [
+			{ x: 100, y: 690 },
+			{ x: 250, y: 690 },
+			{ x: 100, y: 710 },
+			{ x: 250, y: 710 },
+		];
+		const bytes = await writePdfAnnotation(pdfBytes.slice().buffer as ArrayBuffer, { id: "only-one", pageIndex: 0, kind: "highlight", quad, pageWidth: 612, pageHeight: 792, text: "a", color: "yellow" });
+		await expect(removePdfAnnotation(bytes.slice().buffer as ArrayBuffer, 0, "nope")).rejects.toThrow();
 	});
 });
 
