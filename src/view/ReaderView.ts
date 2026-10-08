@@ -44,6 +44,8 @@ export class ReaderView extends ItemView {
 	private pageIndicatorEl!: HTMLElement;
 	/** 标题栏"滚动/分页"模式切换按钮（仅文档式格式显示） */
 	private modeToggleEl: HTMLElement | null = null;
+	/** 标题栏"单页/双页"布局切换按钮（仅 HTML 文档式格式显示） */
+	private layoutToggleEl: HTMLElement | null = null;
 	private zoomSelectEl!: HTMLSelectElement;
 	private zoomPercentEl!: HTMLElement;
 	private customZoomOption: HTMLOptionElement | null = null;
@@ -204,6 +206,8 @@ export class ReaderView extends ItemView {
 		const book = this.controller?.currentBook;
 		this.modeToggleEl?.toggleClass("is-hidden", !caps?.modeSwitch);
 		if (caps?.modeSwitch) this.syncModeToggleIcon();
+		this.layoutToggleEl?.toggleClass("is-hidden", !caps?.layoutSwitch);
+		if (caps?.layoutSwitch) this.syncLayoutToggleIcon();
 		this.totalPages = 0;
 		if (caps?.pageNav) {
 			const total = engine?.getTotalPages?.() ?? 0;
@@ -223,6 +227,18 @@ export class ReaderView extends ItemView {
 		el.setAttribute("title", scrolling ? "切换为分页模式" : "切换为滚动模式");
 		el.setAttribute("aria-label", scrolling ? "切换为分页模式" : "切换为滚动模式");
 		trySetIcon(el, scrolling ? "book-open" : "scroll", scrolling ? "book-open" : "list");
+	}
+
+	/** 单页/双页切换按钮图标/标题：单页显示"双页"入口，双页显示"单页"入口。 */
+	private syncLayoutToggleIcon(): void {
+		const el = this.layoutToggleEl;
+		if (!el) return;
+		const double = this.plugin.settings.reader.layout === "double";
+		el.empty();
+		el.toggleClass("is-active", double);
+		el.setAttribute("title", double ? "切换为单页" : "切换为双页（双栏）");
+		el.setAttribute("aria-label", double ? "切换为单页" : "切换为双页（双栏）");
+		trySetIcon(el, double ? "file-text" : "columns", double ? "file-text" : "book-open");
 	}
 
 	private updatePageIndicator(location: string): void {
@@ -253,6 +269,25 @@ export class ReaderView extends ItemView {
 		await this.plugin.saveSettings();
 		// 引擎内部按百分比还原位置，语义一致，不丢进度
 		engine.switchMode?.(next);
+		this.syncPagingUi();
+		this.updatePageIndicator(engine.currentLocation?.() ?? "1");
+	}
+
+	/** 切换单页/双页布局：写全局设置 + 当前书覆盖，引擎按百分比原位刷新。 */
+	private async toggleLayout(): Promise<void> {
+		const engine = this.controller?.currentEngine;
+		const book = this.controller?.currentBook;
+		if (!engine || !book || !engine.capabilities?.layoutSwitch) return;
+		const next = this.plugin.settings.reader.layout === "double" ? "single" : "double";
+		this.plugin.settings.reader.layout = next;
+		const override = { ...(this.plugin.settings.bookOverrides[book.fingerprint] ?? {}) };
+		override.layout = next;
+		this.plugin.settings.bookOverrides[book.fingerprint] = override;
+		await this.plugin.saveSettings();
+		// 布局切换会改变内容高度：按百分比还原位置，并刷新分页 UI（总页数/页码）
+		const pct = engine.currentPercentage();
+		engine.applySettings(this.controller?.currentReaderSettings() ?? this.plugin.settings.reader);
+		if (engine.capabilities?.pageNav) void engine.goTo(String(Math.round(pct * 10000)));
 		this.syncPagingUi();
 		this.updatePageIndicator(engine.currentLocation?.() ?? "1");
 	}
@@ -309,6 +344,15 @@ export class ReaderView extends ItemView {
 		this.modeToggleEl.addClass("is-hidden");
 		this.modeToggleEl.addEventListener("click", () => void this.toggleReadingMode());
 		this.syncModeToggleIcon();
+
+		// 单页/双页（双栏）布局切换（EPUB/MOBI/AZW3 显示，PDF/TXT 隐藏）
+		this.layoutToggleEl = container.createEl("button", {
+			cls: "nyareader-header-btn nyareader-layout-toggle",
+			attr: { title: "切换单页/双页" },
+		});
+		this.layoutToggleEl.addClass("is-hidden");
+		this.layoutToggleEl.addEventListener("click", () => void this.toggleLayout());
+		this.syncLayoutToggleIcon();
 
 		this.pageIndicatorEl = container.createSpan({ cls: "nyareader-page-indicator", text: "— / —" });
 
@@ -381,6 +425,14 @@ export class ReaderView extends ItemView {
 			i.setTitle("适应宽度").setIcon("move-horizontal").onClick(() => this.controller?.currentEngine?.setZoom?.("fit-width"))
 		);
 		menu.addItem((i) => i.setTitle("适应高度").setIcon("maximize").onClick(() => this.controller?.currentEngine?.setZoom?.("fit-height")));
+		if (this.controller?.currentEngine?.capabilities?.layoutSwitch) {
+			menu.addItem((i) =>
+				i
+					.setTitle(this.plugin.settings.reader.layout === "double" ? "切换为单页" : "切换为双页（双栏）")
+					.setIcon(this.plugin.settings.reader.layout === "double" ? "file-text" : "columns")
+					.onClick(() => void this.toggleLayout())
+			);
+		}
 		menu.addSeparator();
 		menu.addItem((i) => i.setTitle("打开翻译设置（NyaLingo）").setIcon("settings").onClick(() => this.plugin.lingo.openSettingsOrWizard()));
 		menu.showAtMouseEvent(evt);

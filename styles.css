@@ -56,6 +56,13 @@
 .nyareader-mode-toggle.is-active svg {
 	color: var(--text-accent);
 }
+/* 单页/双页切换按钮：双页模式下高亮 */
+.nyareader-layout-toggle.is-active {
+	color: var(--text-accent);
+}
+.nyareader-layout-toggle.is-active svg {
+	color: var(--text-accent);
+}
 .nyareader-zoom-select {
 	background: transparent;
 	color: var(--text-normal);

@@ -26,7 +26,7 @@ export class HtmlDocEngine implements IReaderEngine {
 		return this.opts.formatLabel ?? "html";
 	}
 	get capabilities(): ReaderEngineCapabilities {
-		return { zoom: true, pageNav: this.isPaged(), modeSwitch: true };
+		return { zoom: true, pageNav: this.isPaged(), modeSwitch: true, layoutSwitch: true };
 	}
 	private emitter = new SimpleReaderEmitter();
 	private container!: HTMLElement;
@@ -319,8 +319,11 @@ export class HtmlDocEngine implements IReaderEngine {
 				margin: ${this.settings.margin}px ${this.settings.margin * 1.6}px;
 				padding: 0;
 				overflow-y: auto;
+				/* 双页模式：两栏并排（如书摊开），滚动/分页都按视口一屏一屏走 */
+				${this.settings.layout === "double" ? `column-count: 2; column-gap: ${Math.max(28, this.settings.margin * 1.5)}px;` : ""}
 			}
 			p { margin: 0 0 0.8em 0; }
+			h1, h2, h3 { break-after: avoid; }
 			/* KF8 内嵌资源（kindle:embed:/flow:）无法在浏览器解析，隐藏避免破图 */
 			img[src^="kindle:"], image[src^="kindle:"], img[src=""] { display: none; }
 			a[href^="kindle:"] { pointer-events: none; }

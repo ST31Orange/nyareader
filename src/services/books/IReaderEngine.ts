@@ -16,6 +16,8 @@ export interface ReaderEngineCapabilities {
 	pageNav?: boolean;
 	/** 支持在滚动/分页两种模式间切换（EPUB/MOBI/AZW3/TXT 等文档式格式） */
 	modeSwitch?: boolean;
+	/** 支持单页/双页（双栏）布局切换（HTML 渲染的文档式格式） */
+	layoutSwitch?: boolean;
 }
 
 /** 渲染引擎对外暴露的最小事件集合 */
