@@ -209,6 +209,14 @@ export class BookshelfView extends ItemView {
 		const card = document.createElement("div");
 		card.className = `nyareader-shelf-card is-${mode}`;
 		card.addEventListener("click", () => void this.openBook(path));
+		// 跨区域拖动：把这本书移动到另一个区域 / 根目录
+		card.setAttribute("draggable", "true");
+		card.addEventListener("dragstart", (e) => {
+			e.dataTransfer?.setData("application/x-nyareader-book", path);
+			if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+			card.addClass("is-dragging");
+		});
+		card.addEventListener("dragend", () => card.removeClass("is-dragging"));
 
 		if (mode === "list") {
 			// 列表式：一行显示书名 + 进度（网格三列）
@@ -352,6 +360,12 @@ export class BookshelfView extends ItemView {
 		el.addEventListener("drop", (e) => {
 			e.preventDefault();
 			el.removeClass("nyareader-drag-over");
+			// 书架内部卡片移动（跨区域拖动）
+			const bookPath = e.dataTransfer?.getData("application/x-nyareader-book");
+			if (bookPath) {
+				void this.moveBook(bookPath, relPath);
+				return;
+			}
 			void this.importDropped(e.dataTransfer?.files, relPath);
 		});
 	}
@@ -381,6 +395,49 @@ export class BookshelfView extends ItemView {
 		const ok = await this.service.importFiles(items, relPath);
 		new Notice(`NyaReader：已导入 ${ok} 本书。`);
 		void this.render();
+	}
+
+	/** 区域相对路径：把 vault 路径转成书架区域 relPath（根目录为 ""）。 */
+	private relOf(vaultPath: string): string {
+		const { dir } = splitPath(vaultPath);
+		return dir.replace("nyareader/library", "").replace(/^\/+/, "");
+	}
+
+	/** 在目标目录生成不冲突的路径（同名自动加 (1)、(2)…）。 */
+	private uniqueBookPath(dir: string, fileName: string): string {
+		const dot = fileName.lastIndexOf(".");
+		const stem = dot > 0 ? fileName.slice(0, dot) : fileName;
+		const ext = dot > 0 ? fileName.slice(dot) : "";
+		let candidate = `${dir}/${fileName}`;
+		let i = 1;
+		while (this.plugin.app.vault.getAbstractFileByPath(candidate)) {
+			candidate = `${dir}/${stem} (${i})${ext}`;
+			i++;
+		}
+		return candidate;
+	}
+
+	/** 把一本书移动到另一个区域（relPath 为空表示根目录「全部书籍」）。 */
+	private async moveBook(sourcePath: string, targetRelPath: string): Promise<void> {
+		const file = this.plugin.app.vault.getAbstractFileByPath(sourcePath);
+		if (!(file instanceof TFile)) {
+			new Notice("NyaReader：源文件不存在或已被移动。");
+			return;
+		}
+		if (this.relOf(sourcePath) === targetRelPath) return; // 同一区域，无需移动
+		const dirTarget = targetRelPath ? `nyareader/library/${targetRelPath}` : "nyareader/library";
+		const dest = this.uniqueBookPath(dirTarget, file.name);
+		try {
+			await this.mkdirpParent(dest);
+			await this.plugin.app.vault.rename(file, dest);
+			// 更新索引路径（指纹不变，进度/批注保留）
+			const entry = this.plugin.bookIndex.list().find((e) => e.path === sourcePath);
+			if (entry) await this.plugin.bookIndex.upsert({ ...entry, path: dest });
+			new Notice(`NyaReader：已移动到「${targetRelPath || "全部书籍"}」。`, 3000);
+			void this.render();
+		} catch (e) {
+			new Notice(`NyaReader：移动失败：${e instanceof Error ? e.message : String(e)}`, 6000);
+		}
 	}
 
 	private fmtTime(ts: number): string {
