@@ -111,6 +111,12 @@ describe("BookshelfService.createFolder / importFiles / delete", () => {
 		await svc.deleteFolder("子");
 		expect(adapter.removed).toContain("nyareader/library/子");
 	});
+	it("拒绝删除书架根目录（防御性护栏）", async () => {
+		const adapter = memAdapter(["nyareader/library/a.epub"], []);
+		const svc = new BookshelfService(adapter, LIB, () => undefined);
+		await expect(svc.deleteFolder("")).rejects.toThrow(/根目录/);
+		expect(adapter.removed).toHaveLength(0);
+	});
 });
 
 describe("BookshelfService.sortBooks", () => {

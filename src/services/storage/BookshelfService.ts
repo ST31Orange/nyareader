@@ -134,6 +134,7 @@ export class BookshelfService {
 
 	/** 删除整个区域（文件夹，递归）。 */
 	async deleteFolder(relPath: string): Promise<void> {
+		if (!relPath) throw new Error("不能删除书架根目录。");
 		const dir = relPath ? this.join(this.libraryDir, relPath) : this.libraryDir;
 		await this.adapter.remove(dir);
 	}

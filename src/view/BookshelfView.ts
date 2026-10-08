@@ -85,7 +85,9 @@ export class BookshelfView extends ItemView {
 				},
 				remove: async (p) => {
 					const f = this.plugin.app.vault.getAbstractFileByPath(p);
-					if (f) await this.plugin.app.vault.delete(f);
+					// 文件夹必须 force:true（Obsidian 对非空目录会走非递归 rm 而报 EISDIR）
+					if (f instanceof TFolder) await this.plugin.app.vault.delete(f, true);
+					else if (f) await this.plugin.app.vault.delete(f);
 				},
 			},
 			BOOKSHELF_LIBRARY_DIR,
@@ -211,6 +213,8 @@ export class BookshelfView extends ItemView {
 			// 列表式：一行显示书名 + 进度（网格三列）
 			const row = card.createDiv({ cls: "nyareader-shelf-list-row" });
 			row.createSpan({ cls: "nyareader-shelf-list-title", text: entry?.title ?? base });
+			// 保留一个小的文件类型标签，避免列表模式下完全看不出格式
+			row.createSpan({ cls: "nyareader-shelf-cover-ext is-mini", text: ext.toUpperCase() });
 			row.createSpan({ cls: "nyareader-shelf-list-pct", text: `${Math.round((entry?.progress?.percentage ?? 0) * 100)}%` });
 			const del = card.createEl("button", { text: "✕", cls: "nyareader-shelf-card-del" });
 			del.addEventListener("click", (e) => {
@@ -302,6 +306,11 @@ export class BookshelfView extends ItemView {
 			confirmText: "删除",
 			onConfirm: async () => {
 				await this.service.deleteFolder(relPath);
+				// 清理被删区域内书籍的索引，避免残留陈旧条目
+				const prefix = `${BOOKSHELF_LIBRARY_DIR}/${relPath}/`;
+				for (const e of this.plugin.bookIndex.list()) {
+					if (e.path.startsWith(prefix)) await this.plugin.bookIndex.remove(e.fingerprint);
+				}
 				new Notice("NyaReader：已删除区域。");
 				void this.render();
 			},
