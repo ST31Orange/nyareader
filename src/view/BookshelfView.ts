@@ -247,14 +247,13 @@ export class BookshelfView extends ItemView {
 		const progress = entry?.progress?.percentage ?? 0;
 
 		if (mode === "compact") {
-			// 紧凑模式：作者 + 进度条 + 百分比 + 格式标识放同一行，进度不再单独占一行
-			const metaRow = info.createDiv({ cls: "nyareader-shelf-compact-meta" });
-			metaRow.createSpan({ cls: "nyareader-shelf-card-author", text: entry?.author ?? "未知作者" });
-			const bar = metaRow.createDiv({ cls: "nyareader-shelf-progress" });
-			const barInner = bar.createDiv({ cls: "nyareader-shelf-progress-bar" });
-			barInner.style.width = `${Math.round(progress * 100)}%`;
-			metaRow.createSpan({ cls: "nyareader-shelf-compact-pct", text: `${Math.round(progress * 100)}%` });
-			metaRow.createSpan({ cls: "nyareader-shelf-cover-ext is-mini", text: ext.toUpperCase() });
+			// 紧凑模式：第一行书名（加粗）、第二行作者 + 文件类型、第三行进度条（整行，不溢出）
+			const authorRow = info.createDiv({ cls: "nyareader-shelf-compact-author" });
+			authorRow.createSpan({ cls: "nyareader-shelf-card-author", text: entry?.author ?? "未知作者" });
+			authorRow.createSpan({ cls: "nyareader-shelf-cover-ext is-mini", text: ext.toUpperCase() });
+			const barWrap = info.createDiv({ cls: "nyareader-shelf-progress" });
+			const bar = barWrap.createDiv({ cls: "nyareader-shelf-progress-bar" });
+			bar.style.width = `${Math.round(progress * 100)}%`;
 		} else {
 			info.createDiv({ cls: "nyareader-shelf-card-author", text: entry?.author ? `作者：${entry.author}` : "未知作者" });
 			// 进度条
