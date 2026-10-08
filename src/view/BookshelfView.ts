@@ -12,6 +12,7 @@ import { BookshelfService, BookshelfSort, splitPath } from "../services/storage/
 import type { BookshelfFolder } from "../services/storage/BookshelfService";
 import { BOOKSHELF_VIEW_TYPE } from "./BookshelfViewTypes";
 import { PromptModal } from "./components/PromptModal";
+import { ConfirmModal } from "./components/ConfirmModal";
 import { BOOKSHELF_MODE_LABEL, BookshelfDisplayMode } from "../settings";
 
 const SORT_OPTIONS: Array<{ value: BookshelfSort; label: string }> = [
@@ -278,21 +279,33 @@ export class BookshelfView extends ItemView {
 
 	private async deleteBook(path: string): Promise<void> {
 		const name = splitPath(path).base;
-		if (!window.confirm(`删除《${name}》？文件将从书架中移除。`)) return;
-		await this.service.deleteBook(path).catch(() => undefined);
-		// 从索引移除
-		const entry = this.plugin.bookIndex.list().find((e) => e.path === path);
-		if (entry) await this.plugin.bookIndex.remove(entry.fingerprint);
-		new Notice("NyaReader：已删除。");
-		void this.render();
+		new ConfirmModal(this.app, {
+			title: "删除书籍",
+			message: `删除《${name}》？文件将从书架中移除。`,
+			confirmText: "删除",
+			onConfirm: async () => {
+				await this.service.deleteBook(path);
+				// 从索引移除
+				const entry = this.plugin.bookIndex.list().find((e) => e.path === path);
+				if (entry) await this.plugin.bookIndex.remove(entry.fingerprint);
+				new Notice("NyaReader：已删除。");
+				void this.render();
+			},
+		}).open();
 	}
 
-	private async deleteFolder(relPath: string): Promise<void> {
+	private deleteFolder(relPath: string): void {
 		const name = relPath.split("/").pop() ?? relPath;
-		if (!window.confirm(`删除区域「${name}」及其中的所有书籍？此操作不可恢复。`)) return;
-		await this.service.deleteFolder(relPath).catch(() => undefined);
-		new Notice("NyaReader：已删除区域。");
-		void this.render();
+		new ConfirmModal(this.app, {
+			title: "删除区域",
+			message: `删除区域「${name}」及其中的所有书籍？此操作不可恢复。`,
+			confirmText: "删除",
+			onConfirm: async () => {
+				await this.service.deleteFolder(relPath);
+				new Notice("NyaReader：已删除区域。");
+				void this.render();
+			},
+		}).open();
 	}
 
 	/** 渲染可拖拽的空书架落点（书架为空时）。 */

@@ -885,3 +885,8 @@
 	gap: 8px;
 	margin-top: 14px;
 }
+.nyareader-confirm-message {
+	font-size: 14px;
+	line-height: 1.6;
+	color: var(--text-normal);
+}
