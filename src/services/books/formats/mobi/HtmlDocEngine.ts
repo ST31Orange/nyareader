@@ -35,6 +35,14 @@ const THEME_CSS: Record<ReaderSettings["theme"], string> = {
 
 /** 双页对开时左右页之间的槽宽（px） */
 const GUTTER = 40;
+/** 页面左右内边距（px）：让正文不贴死页面边缘 */
+const PAGE_MARGIN_X = 32;
+/** 页面上下内边距（px） */
+const PAGE_MARGIN_Y = 20;
+/** 页面与阅读区边缘的留白（px），页面尽量铺满、避免四周一大圈灰 */
+const OUTER_PAD = 20;
+/** 低于该可用宽度时，即使选择"双页"也自动退回单页（对应 epub.js spread:"auto"） */
+const MIN_SPREAD_WIDTH = 640;
 /** 多栏容器的最大列数（即最大页数上限） */
 const MAX_COLUMNS = 2000;
 /** 多栏容器的固定宽度：足够容纳 MAX_COLUMNS 个页 */
@@ -67,6 +75,8 @@ export class HtmlDocEngine implements IReaderEngine {
 	private pageW = 480;
 	private pageH = 680;
 	private gutter = GUTTER;
+	/** 实际生效的双页对开（窗口太窄时自动退回单页） */
+	private effectiveDouble = false;
 
 	private resizeBound = (): void => {
 		if (this.isPaged()) this.relayoutPages(true);
@@ -264,14 +274,14 @@ export class HtmlDocEngine implements IReaderEngine {
 		const bookRect = this.paged?.getBoundingClientRect();
 		const elRect = el.getBoundingClientRect();
 		if (!bookRect) return this.currentPage;
-		const x = elRect.left - bookRect.left;
+		const x = elRect.left - bookRect.left - PAGE_MARGIN_X;
 		const col = Math.round(x / (this.pageW + this.gutter));
 		return Math.max(1, Math.min(this.pages, this.currentPage - 1 + col + 1));
 	}
 
 	async nextPage(): Promise<void> {
 		if (this.isPaged()) {
-			this.showPage(this.currentPage + (this.isDouble() ? 2 : 1));
+			this.showPage(this.currentPage + (this.effectiveDouble ? 2 : 1));
 			return;
 		}
 		this.iframe.contentWindow?.scrollBy({ top: this.iframe.clientHeight * 0.9, behavior: "smooth" });
@@ -279,7 +289,7 @@ export class HtmlDocEngine implements IReaderEngine {
 
 	async prevPage(): Promise<void> {
 		if (this.isPaged()) {
-			this.showPage(this.currentPage - (this.isDouble() ? 2 : 1));
+			this.showPage(this.currentPage - (this.effectiveDouble ? 2 : 1));
 			return;
 		}
 		this.iframe.contentWindow?.scrollBy({ top: -this.iframe.clientHeight * 0.9, behavior: "smooth" });
@@ -402,6 +412,9 @@ export class HtmlDocEngine implements IReaderEngine {
 				overflow: hidden;
 				background: ${dark ? "#212124" : "#ffffff"};
 				box-shadow: 0 2px 18px rgba(0,0,0,${dark ? 0.45 : 0.16});
+				/* 页内边距：正文不贴死页面边缘 */
+				padding: ${PAGE_MARGIN_Y}px ${PAGE_MARGIN_X}px;
+				box-sizing: border-box;
 			}
 			.nyareader-columns {
 				position: relative;
@@ -428,19 +441,28 @@ export class HtmlDocEngine implements IReaderEngine {
 		this.doc.head.appendChild(style);
 	}
 
-	/** 根据当前布局（单/双页）与视口尺寸计算页宽/页高。 */
+	/**
+	 * 根据当前布局（单/双页）与视口尺寸计算页宽/页高。
+	 * - 页面铺满阅读区（只留 OUTER_PAD 外框），避免白色页面外出现一大圈灰；
+	 * - 双页对开：可用宽度低于 MIN_SPREAD_WIDTH 时自动退回单页（epub.js spread:"auto"），
+	 *   避免窗口缩小后两页把页面挤出阅读区导致崩版；
+	 * - 小窗口安全：页宽/页高绝不超出可用空间，且不小于下限。
+	 */
 	private computePageDims(): { w: number; h: number } {
 		const win = this.iframe.contentWindow;
 		const vw = win?.innerWidth || 800;
 		const vh = win?.innerHeight || 600;
-		const pad = 64;
-		const availW = Math.max(240, vw - pad);
-		const availH = Math.max(300, vh - pad);
-		const w = this.isDouble()
-			? Math.round(Math.min(680, Math.max(260, (availW - this.gutter) / 2)))
-			: Math.round(Math.min(760, Math.max(320, availW)));
-		const h = Math.round(Math.min(availH, w * 1.414));
-		return { w, h };
+		const availW = Math.max(180, vw - OUTER_PAD * 2);
+		const availH = Math.max(180, vh - OUTER_PAD * 2);
+		this.effectiveDouble = this.isDouble() && availW >= MIN_SPREAD_WIDTH;
+		const w = this.effectiveDouble
+			? Math.round((availW - this.gutter - PAGE_MARGIN_X * 2) / 2)
+			: Math.round(availW - PAGE_MARGIN_X * 2);
+		const h = Math.round(availH);
+		return {
+			w: Math.max(120, Math.min(w, availW - PAGE_MARGIN_X * 2)),
+			h: Math.max(120, Math.min(h, availH)),
+		};
 	}
 
 	/** 分页重排：更新页尺寸、测量页数、按进度还原当前页并定位。 */
@@ -453,14 +475,14 @@ export class HtmlDocEngine implements IReaderEngine {
 		root.style.setProperty("--nyar-page-w", `${w}px`);
 		root.style.setProperty("--nyar-page-h", `${h}px`);
 		root.style.setProperty("--nyar-gutter", `${this.gutter}px`);
-		const bookW = this.isDouble() ? w * 2 + this.gutter : w;
+		const bookW = (this.effectiveDouble ? w * 2 + this.gutter : w) + PAGE_MARGIN_X * 2;
 		this.paged.style.width = `${bookW}px`;
 		this.paged.style.height = `${h}px`;
 
 		const prevPct = this.pages > 0 ? (this.currentPage - 0.5) / this.pages : 0;
 		this.pages = this.measurePages();
 		this.currentPage = Math.max(1, Math.min(this.pages, Math.round(prevPct * this.pages) || 1));
-		if (this.isDouble() && this.currentPage % 2 === 0) this.currentPage -= 1;
+		if (this.effectiveDouble && this.currentPage % 2 === 0) this.currentPage -= 1;
 		const vis = this.currentPage - 1;
 		this.columnsEl.style.transform = `translateX(${-vis * (w + this.gutter)}px)`;
 		if (emit) this.emitProgress();
@@ -492,7 +514,7 @@ export class HtmlDocEngine implements IReaderEngine {
 		const oldTransform = cols.style.transform;
 		cols.style.transform = "";
 		const bookLeft = book.getBoundingClientRect().left;
-		const right = last.getBoundingClientRect().right - bookLeft;
+		const right = last.getBoundingClientRect().right - bookLeft - PAGE_MARGIN_X;
 		cols.style.transform = oldTransform;
 		const col = Math.max(0, Math.round(right / (this.pageW + this.gutter)));
 		return Math.max(1, col + 1);
@@ -505,7 +527,7 @@ export class HtmlDocEngine implements IReaderEngine {
 			return;
 		}
 		this.currentPage = Math.max(1, Math.min(this.pages, page));
-		if (this.isDouble() && this.currentPage % 2 === 0) this.currentPage -= 1;
+		if (this.effectiveDouble && this.currentPage % 2 === 0) this.currentPage -= 1;
 		const vis = this.currentPage - 1;
 		this.columnsEl.style.transform = `translateX(${-vis * (this.pageW + this.gutter)}px)`;
 		if (emit) this.emitProgress();
