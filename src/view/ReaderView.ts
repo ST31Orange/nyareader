@@ -52,6 +52,9 @@ export class ReaderView extends ItemView {
 	private currentFile: TFile | null = null;
 	/** 标题栏翻译按钮（切换激活态） */
 	private translateActionEl: HTMLElement | null = null;
+	/** 标题栏信息条的宿主与插入锚点（用于宿主被重建时重新注入） */
+	private headerRowEl: HTMLElement | null = null;
+	private headerAnchorEl: HTMLElement | null = null;
 	/** 当前书总页数（分页格式用于页码指示） */
 	private totalPages = 0;
 
@@ -168,6 +171,7 @@ export class ReaderView extends ItemView {
 	}
 
 	private syncHeaderControls(): void {
+		this.ensureHeaderInfo();
 		const engine = this.controller?.currentEngine;
 		const caps = engine?.capabilities;
 		const show = Boolean(caps?.pageNav || caps?.zoom);
@@ -205,11 +209,24 @@ export class ReaderView extends ItemView {
 		// 用 addAction 返回元素的父节点定位标题栏动作区，避免硬编码内部类名
 		const row = moreBtn.parentElement;
 		if (!row) return;
-		this.headerInfoEl = document.createElement("div");
-		this.headerInfoEl.className = "nyareader-header-info";
-		row.insertBefore(this.headerInfoEl, highlightBtn);
-		this.buildHeaderInfo(this.headerInfoEl);
+		this.headerRowEl = row;
+		this.headerAnchorEl = highlightBtn;
+		this.ensureHeaderInfo();
 		void noteBtn;
+	}
+
+	/** 确保信息条挂在标题栏上（宿主被 Obsidian 重建时可自动补回）。 */
+	private ensureHeaderInfo(): void {
+		if (this.headerInfoEl?.isConnected) return;
+		const row = this.headerRowEl;
+		const anchor = this.headerAnchorEl;
+		if (!row?.isConnected || !anchor?.isConnected) return;
+		if (!this.headerInfoEl) {
+			this.headerInfoEl = document.createElement("div");
+			this.headerInfoEl.className = "nyareader-header-info";
+			this.buildHeaderInfo(this.headerInfoEl);
+		}
+		row.insertBefore(this.headerInfoEl, anchor);
 	}
 
 	/** 标题栏内的"页码 · 缩放"信息条。 */
