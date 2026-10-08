@@ -6,7 +6,7 @@
  * 书架目录：vault 可见路径 nyareader/library（非 .obsidian），保证文件被 vault 索引、
  * 可经 getAbstractFileByPath 打开；mkdir 递归创建父目录。
  */
-import { ItemView, Notice, TFile, TFolder, WorkspaceLeaf } from "obsidian";
+import { ItemView, Notice, TFile, TFolder, WorkspaceLeaf, setIcon } from "obsidian";
 import type NyaReaderPlugin from "../main";
 import { BookshelfService, BookshelfSort, splitPath } from "../services/storage/BookshelfService";
 import type { BookshelfFolder } from "../services/storage/BookshelfService";
@@ -108,6 +108,7 @@ export class BookshelfView extends ItemView {
 	}
 
 	async onClose(): Promise<void> {
+		this.plugin.cover.clear();
 		this.rootEl?.empty();
 		return Promise.resolve();
 	}
@@ -226,7 +227,18 @@ export class BookshelfView extends ItemView {
 
 		if (mode !== "compact") {
 			const cover = card.createDiv({ cls: "nyareader-shelf-cover" });
-			cover.createSpan({ cls: "nyareader-shelf-cover-ext", text: ext.toUpperCase() });
+			// 先放一个占位图标，异步加载封面图后替换（EPUB/MOBI/AZW3 才有封面）
+			const placeholder = cover.createDiv({ cls: "nyareader-shelf-cover-placeholder" });
+			setIcon(placeholder, "book-open");
+			const file = this.plugin.app.vault.getAbstractFileByPath(path);
+			if (file instanceof TFile) {
+				void this.plugin.cover.getCoverUrl(file, entry?.fingerprint).then((url) => {
+					if (!url || !cover.isConnected) return;
+					placeholder.remove();
+					const img = cover.createEl("img", { attr: { src: url, alt: "", loading: "lazy" } });
+					img.addClass("nyareader-shelf-cover-img");
+				});
+			}
 		}
 
 		const info = card.createDiv({ cls: "nyareader-shelf-card-info" });
@@ -248,9 +260,14 @@ export class BookshelfView extends ItemView {
 			const bar = barWrap.createDiv({ cls: "nyareader-shelf-progress-bar" });
 			bar.style.width = `${Math.round(progress * 100)}%`;
 		}
-		info.createDiv({
-			cls: "nyareader-shelf-card-meta",
-			text: mode === "compact" ? `${Math.round(progress * 100)}%` : `${Math.round(progress * 100)}%${entry?.lastOpenedAt ? ` · ${this.fmtTime(entry.lastOpenedAt)}` : ""}`,
+		const meta = info.createDiv({ cls: "nyareader-shelf-card-meta" });
+		if (mode !== "compact") {
+			// 电子书格式放到最下面一行（完整显示模式）
+			meta.createSpan({ cls: "nyareader-shelf-cover-ext is-mini", text: ext.toUpperCase() });
+		}
+		meta.createSpan({
+			cls: "nyareader-shelf-card-meta-text",
+			text: `${Math.round(progress * 100)}%${mode !== "compact" && entry?.lastOpenedAt ? ` · ${this.fmtTime(entry.lastOpenedAt)}` : ""}`,
 		});
 
 		// 删除按钮

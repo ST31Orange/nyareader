@@ -14,6 +14,7 @@ import { BOOKSHELF_VIEW_TYPE } from "./view/BookshelfViewTypes";
 import { BookIndexService } from "./services/storage/BookIndexService";
 import { HistoryStore } from "./services/history/HistoryStore";
 import { NyaLingoClient } from "./services/lingo/NyaLingoClient";
+import { BookCoverService } from "./services/books/BookCoverService";
 import { formatFromExtension, sniffFormat } from "./services/books/Parser";
 import type { BookFormat } from "./types";
 
@@ -25,6 +26,8 @@ export default class NyaReaderPlugin extends Plugin {
 	history!: HistoryStore;
 	/** 翻译客户端：委托 NyaLingo 共享翻译服务。 */
 	lingo!: NyaLingoClient;
+	/** 书架封面提取与缓存。 */
+	cover!: BookCoverService;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -39,6 +42,8 @@ export default class NyaReaderPlugin extends Plugin {
 			this.manifest.dir ? `${this.manifest.dir}/` : ""
 		);
 		await this.history.load();
+
+		this.cover = new BookCoverService(this);
 
 		this.lingo = new NyaLingoClient({
 			app: this.app,
