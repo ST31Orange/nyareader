@@ -5,8 +5,8 @@
  */
 import type { BookModel, ReaderSettings } from "../../types";
 
-/** 缩放模式：适应宽度 / 适应页面 / 自定义百分比 */
-export type ZoomMode = "fit-width" | "fit-page" | "custom";
+/** 缩放模式：适应宽度 / 适应高度 / 自定义百分比 */
+export type ZoomMode = "fit-width" | "fit-height" | "custom";
 
 /** 引擎能力声明（视图层据此决定显示哪些控件，缺省视为不支持） */
 export interface ReaderEngineCapabilities {

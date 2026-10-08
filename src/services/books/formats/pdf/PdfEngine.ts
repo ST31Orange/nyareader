@@ -18,7 +18,7 @@ import { SimpleReaderEmitter } from "../../IReaderEngine";
 import type { ReaderSettings } from "../../../../types";
 import { pdfjs, initPdfWorker } from "./pdfWorker";
 import type { Plugin } from "obsidian";
-import type { PDFDocumentProxy, PageViewport } from "pdfjs-dist";
+import type { PDFDocumentProxy, PDFPageProxy, PageViewport } from "pdfjs-dist";
 import type { PageMetrics } from "../../../../utils/pdf-viewport";
 import { findVisibleRange, pageIndexAtMidpoint, pageSizeFromViewport, scrollTopForPage } from "../../../../utils/pdf-viewport";
 
@@ -28,6 +28,14 @@ export interface PdfEngineOptions {
 	buffer: ArrayBuffer;
 }
 
+/** pdf.js 链接注释（只取用得到的字段）。 */
+interface PdfLinkAnnotation {
+	subtype?: string;
+	rect?: number[];
+	url?: string;
+	dest?: string | unknown[] | null;
+}
+
 /** 单页占位与渲染状态。 */
 interface PageSlot {
 	pageNumber: number;
@@ -35,6 +43,8 @@ interface PageSlot {
 	canvas: HTMLCanvasElement | null;
 	textLayerHost: HTMLElement | null;
 	overlayHost: HTMLElement | null;
+	/** 链接注释层（PDF 内/外超链接） */
+	linkHost: HTMLElement | null;
 	viewport: PageViewport | null;
 	/** scale=1（已含旋转）时的页面 CSS 尺寸 */
 	baseW: number;
@@ -57,6 +67,11 @@ const UNRENDER_MARGIN = 9000;
 const MIN_SCALE = 0.15;
 const MAX_SCALE = 6;
 const WHEEL_ZOOM_STEP = 1.12;
+/**
+ * "适应高度"的放大系数：纯适应高度在宽屏下会留出很多空白显得偏小，
+ * 这里放大 8%，并用"适应宽度"封顶，保证不会出现横向溢出。
+ */
+const FIT_HEIGHT_BOOST = 1.08;
 
 export class PdfEngine implements IReaderEngine {
 	readonly format = "pdf";
@@ -269,6 +284,7 @@ export class PdfEngine implements IReaderEngine {
 				canvas: null,
 				textLayerHost: null,
 				overlayHost: null,
+				linkHost: null,
 				viewport: null,
 				baseW: this.baseW,
 				baseH: this.baseH,
@@ -290,8 +306,9 @@ export class PdfEngine implements IReaderEngine {
 		const availW = this.availableWidth();
 		const availH = this.availableHeight();
 		switch (this.zoomMode) {
-			case "fit-page":
-				return clamp(Math.min(availW / this.baseW, availH / this.baseH), MIN_SCALE, MAX_SCALE);
+			case "fit-height":
+				// 适应高度并略微放大；用适应宽度封顶避免横向滚动
+				return clamp(Math.min(availW / this.baseW, (availH / this.baseH) * FIT_HEIGHT_BOOST), MIN_SCALE, MAX_SCALE);
 			case "custom":
 				return clamp(this.zoomValue, MIN_SCALE, MAX_SCALE);
 			case "fit-width":
@@ -395,9 +412,11 @@ export class PdfEngine implements IReaderEngine {
 			const canvas = slot.el.createEl("canvas", { cls: "nyareader-pdf-canvas" });
 			const textLayerHost = slot.el.createDiv({ cls: "nyareader-pdf-textlayer" });
 			const overlayHost = slot.el.createDiv({ cls: "nyareader-pdf-overlay" });
+			const linkHost = slot.el.createDiv({ cls: "nyareader-pdf-links" });
 			slot.canvas = canvas;
 			slot.textLayerHost = textLayerHost;
 			slot.overlayHost = overlayHost;
+			slot.linkHost = linkHost;
 			slot.viewport = viewport;
 
 			// 高分屏：canvas 物理尺寸 = viewport × dpr，CSS 尺寸 = viewport。
@@ -415,16 +434,15 @@ export class PdfEngine implements IReaderEngine {
 			await page.render(renderContext).promise;
 			if (this.destroyed || gen !== this.generation || canvas.parentElement !== slot.el) return;
 
-			// 文本层：必须设置 --scale-factor，pdf.js 用它计算字号，否则划选会错位。
-			textLayerHost.style.setProperty("--scale-factor", String(viewport.scale));
-			textLayerHost.style.width = `${cssW}px`;
-			textLayerHost.style.height = `${cssH}px`;
-			const textLayer = new pdfjs.TextLayer({
-				textContentSource: page.streamTextContent(),
-				container: textLayerHost,
-				viewport,
-			});
-			await textLayer.render();
+			await this.renderTextLayer(slot, textLayerHost, page, viewport, cssW, cssH, gen);
+			if (this.destroyed || gen !== this.generation) return;
+
+			// 链接注释层（PDF 内/外超链接可点击）
+			try {
+				await this.renderLinkLayer(slot, linkHost, page, viewport);
+			} catch {
+				/* 链接层失败不影响阅读 */
+			}
 			if (this.destroyed || gen !== this.generation) return;
 
 			slot.rendered = true;
@@ -444,10 +462,126 @@ export class PdfEngine implements IReaderEngine {
 		slot.canvas = null;
 		slot.textLayerHost = null;
 		slot.overlayHost = null;
+		slot.linkHost = null;
 		slot.viewport = null;
 		slot.rendered = false;
 		slot.rendering = false;
 		slot.renderGen = -1;
+	}
+
+	/**
+	 * 渲染文本层。
+	 *
+	 * 关键：必须设置 --scale-factor。pdf.js 4.x 用 calc(var(--scale-factor) * Npx)
+	 * 计算 span 字号，缺这个变量会让透明文字盒与画布文字错位，表现为"选不中/选不准"。
+	 * 同时用 getTextContent() 判断该页是否存在可选中文本（扫描版 PDF 没有）。
+	 */
+	private async renderTextLayer(
+		slot: PageSlot,
+		host: HTMLElement,
+		page: PDFPageProxy,
+		viewport: PageViewport,
+		cssW: number,
+		cssH: number,
+		gen: number
+	): Promise<void> {
+		host.style.setProperty("--scale-factor", String(viewport.scale));
+		host.style.width = `${cssW}px`;
+		host.style.height = `${cssH}px`;
+		const textContent = await page.getTextContent();
+		if (this.destroyed || gen !== this.generation) return;
+		const hasText = textContent.items.some((item) => {
+			const str = (item as { str?: unknown }).str;
+			return typeof str === "string" && str.trim() !== "";
+		});
+		// 扫描版页面：无文本层，提示由 CSS 处理（不报错）
+		slot.el.toggleClass("is-image-only", !hasText);
+		if (!hasText) return;
+		const textLayer = new pdfjs.TextLayer({
+			textContentSource: textContent,
+			container: host,
+			viewport,
+		});
+		await textLayer.render();
+		if (this.destroyed || gen !== this.generation) return;
+		// 诊断：有文本却没生成任何 span，说明文本层构建失败（划选/复制会不可用）
+		if (host.childElementCount === 0) {
+			this.emitter.emit("error", { message: `第 ${slot.pageNumber} 页文本层为空，划选/复制可能不可用。` });
+		}
+	}
+
+	/**
+	 * 渲染超链接注释层：外链在新窗口打开，PDF 内部链接跳转到目标页。
+	 * 只有链接矩形本身接收点击（层本身 pointer-events:none），不影响其他区域划选。
+	 */
+	private async renderLinkLayer(slot: PageSlot, host: HTMLElement, page: PDFPageProxy, viewport: PageViewport): Promise<void> {
+		const annotations = (await page.getAnnotations()) as PdfLinkAnnotation[];
+		host.empty();
+		for (const a of annotations) {
+			if (a.subtype !== "Link") continue;
+			const rect = a.rect;
+			if (!Array.isArray(rect) || rect.length < 4) continue;
+			const converted = viewport.convertToViewportRectangle(rect) as number[];
+			const x1 = converted[0];
+			const y1 = converted[1];
+			const x2 = converted[2];
+			const y2 = converted[3];
+			const left = Math.min(x1, x2);
+			const top = Math.min(y1, y2);
+			const width = Math.abs(x2 - x1);
+			const height = Math.abs(y2 - y1);
+			if (!(width > 0) || !(height > 0)) continue;
+			const link = document.createElement("a");
+			link.className = "nyareader-pdf-link";
+			link.style.left = `${left}px`;
+			link.style.top = `${top}px`;
+			link.style.width = `${width}px`;
+			link.style.height = `${height}px`;
+			if (typeof a.url === "string" && a.url) {
+				link.href = a.url;
+				link.target = "_blank";
+				link.rel = "noopener noreferrer";
+				link.title = a.url;
+			} else if (a.dest) {
+				const dest = a.dest;
+				link.href = "#";
+				link.addClass("nyareader-pdf-link-internal");
+				link.title = "跳转到该位置";
+				link.addEventListener("click", (evt) => {
+					evt.preventDefault();
+					evt.stopPropagation();
+					void this.navigateToDest(dest);
+				});
+			} else {
+				continue;
+			}
+			host.appendChild(link);
+		}
+	}
+
+	/** 解析 PDF 目标（命名/内联）为页码并跳转。 */
+	private async navigateToDest(dest: string | unknown[] | null): Promise<void> {
+		const page = await this.resolveDestPage(dest);
+		if (page) await this.goTo(String(page));
+	}
+
+	private async resolveDestPage(dest: string | unknown[] | null): Promise<number | null> {
+		const doc = this.doc;
+		if (!doc || !dest) return null;
+		try {
+			let resolved: unknown = dest;
+			if (typeof resolved === "string") resolved = await doc.getDestination(resolved);
+			if (!Array.isArray(resolved) || resolved.length === 0) return null;
+			const target = resolved[0];
+			if (target && typeof target === "object" && "num" in (target as Record<string, unknown>)) {
+				const index = await doc.getPageIndex(target as { num: number; gen: number }).catch(() => -1);
+				return index >= 0 ? index + 1 : null;
+			}
+			if (typeof target === "number" && Number.isFinite(target)) return Math.max(1, Math.floor(target) + 1);
+		} catch {
+			/* 目标解析失败忽略 */
+		}
+		return null;
 	}
 
 	/** 释放离视口很远的页面，控制大文件内存占用。 */
@@ -474,7 +608,7 @@ export class PdfEngine implements IReaderEngine {
 		this.applyThemeClass();
 		if (!this.doc || this.slots.length === 0) return;
 		// 仅当缩放模式随容器变化时才重排，避免无谓重渲染。
-		if (this.zoomMode === "fit-width" || this.zoomMode === "fit-page") {
+		if (this.zoomMode === "fit-width" || this.zoomMode === "fit-height") {
 			const next = this.computeScale();
 			if (Math.abs(next - this.scale) > 0.0005) {
 				this.relayout(true);
@@ -611,7 +745,7 @@ export class PdfEngine implements IReaderEngine {
 
 	private handleResize(): void {
 		if (this.destroyed || !this.doc) return;
-		if (this.zoomMode !== "fit-width" && this.zoomMode !== "fit-page") return;
+		if (this.zoomMode !== "fit-width" && this.zoomMode !== "fit-height") return;
 		const next = this.computeScale();
 		if (Math.abs(next - this.scale) < 0.0005) return;
 		this.relayout(true);

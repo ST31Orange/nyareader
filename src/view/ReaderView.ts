@@ -1,11 +1,12 @@
 /**
  * NyaReader 阅读视图（ItemView）。
  *
- * 布局（v0.3.0）：把尽可能多的空间留给正文。
- * - 常用功能放进 Obsidian 视图标题栏（addAction，公开 API）：书架 / 打开 / 目录 / 翻译 / 更多；
- * - 标题栏下方一条紧凑的常驻工具栏（非悬浮）：翻页 + 缩放，仅在当前引擎声明支持时出现；
+ * 布局（v0.3.1）：所有阅读控件集中在 Obsidian 视图标题栏一行，正文区零占用。
+ * - 标题栏：书架 / 打开 / 目录 / 翻译 / [页码 · 缩放] / 高亮 / 笔记 / 更多；
  * - 右侧翻译面板默认 320px，可拖拽左边缘调宽，宽度写入设置；
- * - 键盘：←/→/PageUp/PageDown 翻页，Home/End 首末页，Ctrl/Cmd ± 缩放（视图 scope，公开 API）。
+ * - 键盘：←/→/PageUp/PageDown 翻页，Home/End 首末页，Ctrl·⌘ ± 与 Ctrl+0 缩放。
+ *   键盘直接监听视图容器的 keydown（不依赖 Obsidian scope 的激活时序），
+ *   因此只要焦点在阅读视图内就会生效。
  *
  * 只与 ReaderController 交互；引擎能力通过 IReaderEngine.capabilities 查询。
  */
@@ -36,7 +37,7 @@ const FIXED_ZOOM_PERCENTS = [50, 75, 100, 125, 150, 200, 300];
 const ZOOM_STEP = 1.15;
 
 export class ReaderView extends ItemView {
-	private topbarEl!: HTMLElement;
+	private headerInfoEl!: HTMLElement;
 	private pageIndicatorEl!: HTMLElement;
 	private zoomSelectEl!: HTMLSelectElement;
 	private zoomPercentEl!: HTMLElement;
@@ -79,11 +80,6 @@ export class ReaderView extends ItemView {
 
 		this.buildTitlebarActions();
 
-		// 紧凑常驻工具栏（翻页 + 缩放），未打开书时隐藏
-		this.topbarEl = container.createDiv({ cls: "nyareader-topbar" });
-		this.buildTopbar();
-		this.topbarEl.toggleClass("is-hidden", true);
-
 		this.bodyEl = container.createDiv({ cls: "nyareader-content" });
 		this.tocPanel = this.bodyEl.createDiv({ cls: "nyareader-toc-panel" });
 		this.tocListEl = this.tocPanel.createDiv({ cls: "nyareader-toc-list" });
@@ -107,6 +103,7 @@ export class ReaderView extends ItemView {
 				this.plugin.settings.translation.targetLanguage = lang;
 				await this.plugin.saveSettings();
 			},
+			// 打开 NyaLingo 真正的设置面板（旧版本降级到安装向导）
 			onOpenSettings: () => this.plugin.lingo.openSettingsOrWizard(),
 			getWidth: () => this.plugin.settings.ui.translationPanelWidth,
 			setWidth: (px) => {
@@ -121,7 +118,7 @@ export class ReaderView extends ItemView {
 		});
 		this.transPanel.mount(this.transHost);
 
-		this.registerKeymap();
+		this.registerKeydown();
 		this.showWelcome();
 	}
 
@@ -140,8 +137,11 @@ export class ReaderView extends ItemView {
 		this.readingArea.empty();
 		await this.controller?.openBook(file, this.readingArea);
 		this.attachEngineListeners();
-		this.syncToolbar();
-		// 让阅读区获得焦点，↑/↓ 等原生滚动才有响应
+		this.syncHeaderControls();
+		this.focusReadingArea();
+	}
+
+	private focusReadingArea(): void {
 		try {
 			this.readingArea.focus({ preventScroll: true });
 		} catch {
@@ -154,7 +154,7 @@ export class ReaderView extends ItemView {
 		this.renderToc(book);
 	}
 
-	/** 监听引擎事件：位置（更新页码/进度）与选区（划词翻译）。 */
+	/** 监听引擎事件：位置（更新页码/进度）、选区（划词翻译）与缩放。 */
 	private attachEngineListeners(): void {
 		const engine = this.controller?.currentEngine;
 		if (!engine || !this.transPanel) return;
@@ -163,17 +163,17 @@ export class ReaderView extends ItemView {
 			if (this.transPanel?.isVisible() && payload.text?.trim()) this.transPanel.translateSelection(payload.text);
 		});
 		engine.on("zoomChanged", (payload) => this.syncZoomUi(payload.mode, payload.percent));
-		this.syncZoomUiFromEngine();
+		const zoom = engine.getZoom?.();
+		if (zoom) this.syncZoomUi(zoom.mode, zoom.percent);
 	}
 
-	private syncToolbar(): void {
+	private syncHeaderControls(): void {
 		const engine = this.controller?.currentEngine;
 		const caps = engine?.capabilities;
 		const show = Boolean(caps?.pageNav || caps?.zoom);
-		this.topbarEl.toggleClass("is-hidden", !show);
+		this.headerInfoEl?.toggleClass("is-hidden", !show);
 		if (!show) return;
-		const paged = Boolean(caps?.pageNav);
-		this.pageIndicatorEl.toggleClass("is-hidden", !paged);
+		this.pageIndicatorEl?.toggleClass("is-hidden", !caps?.pageNav);
 		this.updatePageIndicator(engine?.currentLocation?.() ?? "1");
 	}
 
@@ -181,12 +181,7 @@ export class ReaderView extends ItemView {
 		if (!this.pageIndicatorEl) return;
 		const cur = parseInt(location, 10);
 		if (!Number.isFinite(cur)) return;
-		this.pageIndicatorEl.setText(this.totalPages > 0 ? `第 ${cur} / ${this.totalPages} 页` : `第 ${cur} 页`);
-	}
-
-	private syncZoomUiFromEngine(): void {
-		const zoom = this.controller?.currentEngine?.getZoom?.();
-		if (zoom) this.syncZoomUi(zoom.mode, zoom.percent);
+		this.pageIndicatorEl.setText(this.totalPages > 0 ? `${cur} / ${this.totalPages} 页` : `${cur} 页`);
 	}
 
 	private applyPanelWidth(): void {
@@ -194,50 +189,58 @@ export class ReaderView extends ItemView {
 		this.transHost?.style.setProperty("--nyareader-trans-width", `${w}px`);
 	}
 
-	// ---------- 工具栏 ----------
+	// ---------- 视图标题栏 ----------
 
-	/** 视图标题栏按钮（公开 API addAction）。 */
+	/** 标题栏按钮与信息条（公开 API addAction）。 */
 	private buildTitlebarActions(): void {
 		this.addAction("library", "书架", () => void this.openBookshelf());
 		this.addAction("folder-open", "打开电子书…", () => void this.plugin.pickAndOpenBook());
 		this.addAction("list-tree", "目录", () => this.toggleToc());
 		this.translateActionEl = this.addAction("languages", "翻译（开/关）", () => this.toggleTranslate());
 		this.translateActionEl.addClass("nyareader-titlebar-action");
-		this.addAction("ellipsis-horizontal", "更多操作", (evt) => this.openMoreMenu(evt));
+		const highlightBtn = this.addAction("highlighter", "高亮选中文本", () => void this.addHighlight());
+		const noteBtn = this.addAction("pencil", "添加笔记", () => void this.addNote());
+		const moreBtn = this.addAction("ellipsis-horizontal", "更多操作", (evt) => this.openMoreMenu(evt));
+
+		// 用 addAction 返回元素的父节点定位标题栏动作区，避免硬编码内部类名
+		const row = moreBtn.parentElement;
+		if (!row) return;
+		this.headerInfoEl = document.createElement("div");
+		this.headerInfoEl.className = "nyareader-header-info";
+		row.insertBefore(this.headerInfoEl, highlightBtn);
+		this.buildHeaderInfo(this.headerInfoEl);
+		void noteBtn;
 	}
 
-	/** 紧凑工具栏：翻页 + 缩放。 */
-	private buildTopbar(): void {
-		const mkIconBtn = (icon: string, title: string, onClick: () => void): HTMLElement => {
-			const b = this.topbarEl.createEl("button", { cls: "nyareader-icon-btn", attr: { "aria-label": title, title } });
-			setIcon(b, icon);
-			b.addEventListener("click", onClick);
-			return b;
-		};
+	/** 标题栏内的"页码 · 缩放"信息条。 */
+	private buildHeaderInfo(container: HTMLElement): void {
+		this.pageIndicatorEl = container.createSpan({ cls: "nyareader-page-indicator", text: "— / —" });
 
-		mkIconBtn("chevron-left", "上一页", () => void this.controller?.currentEngine?.prevPage());
-		this.pageIndicatorEl = this.topbarEl.createSpan({ cls: "nyareader-page-indicator", text: "— / —" });
-		mkIconBtn("chevron-right", "下一页", () => void this.controller?.currentEngine?.nextPage());
+		const zoomOut = container.createEl("button", { cls: "nyareader-header-btn", attr: { title: "缩小", "aria-label": "缩小" } });
+		setIcon(zoomOut, "minus");
+		zoomOut.addEventListener("click", () => this.nudgeZoom(1 / ZOOM_STEP));
 
-		this.topbarEl.createDiv({ cls: "nyareader-topbar-spacer" });
-
-		mkIconBtn("minus", "缩小", () => this.nudgeZoom(1 / ZOOM_STEP));
-		this.zoomSelectEl = this.topbarEl.createEl("select", { cls: "nyareader-zoom-select" });
+		this.zoomSelectEl = container.createEl("select", { cls: "nyareader-zoom-select" });
 		this.zoomSelectEl.createEl("option", { value: "fit-width", text: "适应宽度" });
-		this.zoomSelectEl.createEl("option", { value: "fit-page", text: "适应页面" });
+		this.zoomSelectEl.createEl("option", { value: "fit-height", text: "适应高度" });
 		for (const p of FIXED_ZOOM_PERCENTS) this.zoomSelectEl.createEl("option", { value: String(p), text: `${p}%` });
 		this.customZoomOption = this.zoomSelectEl.createEl("option", { value: "custom", text: "自定义" });
 		this.customZoomOption.hide();
 		this.zoomSelectEl.addEventListener("change", () => this.onZoomSelectChange());
-		mkIconBtn("plus", "放大", () => this.nudgeZoom(ZOOM_STEP));
-		this.zoomPercentEl = this.topbarEl.createSpan({ cls: "nyareader-zoom-percent", text: "100%" });
+
+		const zoomIn = container.createEl("button", { cls: "nyareader-header-btn", attr: { title: "放大", "aria-label": "放大" } });
+		setIcon(zoomIn, "plus");
+		zoomIn.addEventListener("click", () => this.nudgeZoom(ZOOM_STEP));
+
+		this.zoomPercentEl = container.createSpan({ cls: "nyareader-zoom-percent", text: "100%" });
+		container.toggleClass("is-hidden", true);
 	}
 
 	private onZoomSelectChange(): void {
 		const engine = this.controller?.currentEngine;
 		if (!engine?.setZoom) return;
 		const v = this.zoomSelectEl.value;
-		if (v === "fit-width" || v === "fit-page") {
+		if (v === "fit-width" || v === "fit-height") {
 			engine.setZoom(v);
 			return;
 		}
@@ -255,7 +258,7 @@ export class ReaderView extends ItemView {
 	private syncZoomUi(mode: ZoomMode, percent: number): void {
 		if (this.zoomPercentEl) this.zoomPercentEl.setText(`${percent}%`);
 		if (!this.zoomSelectEl) return;
-		if (mode === "fit-width" || mode === "fit-page") {
+		if (mode === "fit-width" || mode === "fit-height") {
 			this.zoomSelectEl.value = mode;
 			return;
 		}
@@ -274,16 +277,15 @@ export class ReaderView extends ItemView {
 	/** 更多操作菜单（公开 Menu API）。 */
 	private openMoreMenu(evt: MouseEvent): void {
 		const menu = new Menu();
-		menu.addItem((i) => i.setTitle("高亮").setIcon("highlighter").onClick(() => void this.addHighlight()));
-		menu.addItem((i) => i.setTitle("笔记").setIcon("pencil").onClick(() => void this.addNote()));
+		menu.addItem((i) => i.setTitle("高亮选中文本").setIcon("highlighter").onClick(() => void this.addHighlight()));
+		menu.addItem((i) => i.setTitle("添加笔记").setIcon("pencil").onClick(() => void this.addNote()));
 		menu.addSeparator();
 		menu.addItem((i) =>
 			i.setTitle("适应宽度").setIcon("move-horizontal").onClick(() => this.controller?.currentEngine?.setZoom?.("fit-width"))
 		);
-		menu.addItem((i) => i.setTitle("适应页面").setIcon("maximize").onClick(() => this.controller?.currentEngine?.setZoom?.("fit-page")));
+		menu.addItem((i) => i.setTitle("适应高度").setIcon("maximize").onClick(() => this.controller?.currentEngine?.setZoom?.("fit-height")));
 		menu.addSeparator();
-		menu.addItem((i) => i.setTitle("字号 +").onClick(() => void this.adjustFont(1)));
-		menu.addItem((i) => i.setTitle("字号 −").onClick(() => void this.adjustFont(-1)));
+		menu.addItem((i) => i.setTitle("打开翻译设置（NyaLingo）").setIcon("settings").onClick(() => this.plugin.lingo.openSettingsOrWizard()));
 		menu.showAtMouseEvent(evt);
 	}
 
@@ -302,51 +304,51 @@ export class ReaderView extends ItemView {
 
 	// ---------- 键盘 ----------
 
-	private registerKeymap(): void {
-		// ItemView 自带 scope，仅在视图激活时生效，避免污染全局快捷键。
-		if (!this.scope) return;
-		this.scope.register([], "ArrowLeft", (evt) => this.onNavKey(evt, "prev"));
-		this.scope.register([], "ArrowRight", (evt) => this.onNavKey(evt, "next"));
-		this.scope.register([], "PageUp", (evt) => this.onNavKey(evt, "prev"));
-		this.scope.register([], "PageDown", (evt) => this.onNavKey(evt, "next"));
-		this.scope.register([], "Home", (evt) => this.onNavKey(evt, "first"));
-		this.scope.register([], "End", (evt) => this.onNavKey(evt, "last"));
-		this.scope.register(["Mod"], "=", (evt) => this.onZoomKey(evt, ZOOM_STEP));
-		this.scope.register(["Mod"], "+", (evt) => this.onZoomKey(evt, ZOOM_STEP));
-		this.scope.register(["Mod"], "-", (evt) => this.onZoomKey(evt, 1 / ZOOM_STEP));
-		this.scope.register(["Mod"], "0", () => {
-			this.controller?.currentEngine?.setZoom?.("fit-width");
-			return false;
-		});
+	private registerKeydown(): void {
+		this.registerDomEvent(this.containerEl, "keydown", (evt) => this.onKeydown(evt));
 	}
 
-	private onNavKey(evt: KeyboardEvent, action: "prev" | "next" | "first" | "last"): boolean {
-		if (isEditableTarget(evt.target)) return true;
+	private onKeydown(evt: KeyboardEvent): void {
+		if (isEditableTarget(evt.target)) return;
 		const engine = this.controller?.currentEngine;
-		if (!engine?.capabilities?.pageNav) return true;
-		switch (action) {
-			case "prev":
+		if (!engine) return;
+		const mod = evt.ctrlKey || evt.metaKey;
+		if (mod) {
+			if (evt.key === "=" || evt.key === "+") {
+				evt.preventDefault();
+				this.nudgeZoom(ZOOM_STEP);
+			} else if (evt.key === "-" || evt.key === "_") {
+				evt.preventDefault();
+				this.nudgeZoom(1 / ZOOM_STEP);
+			} else if (evt.key === "0") {
+				evt.preventDefault();
+				engine.setZoom?.("fit-width");
+			}
+			return;
+		}
+		if (!engine.capabilities?.pageNav) return;
+		switch (evt.key) {
+			case "ArrowLeft":
+			case "PageUp":
+				evt.preventDefault();
 				void engine.prevPage();
 				break;
-			case "next":
+			case "ArrowRight":
+			case "PageDown":
+				evt.preventDefault();
 				void engine.nextPage();
 				break;
-			case "first":
+			case "Home":
+				evt.preventDefault();
 				void engine.goTo("1");
 				break;
-			case "last":
+			case "End":
+				evt.preventDefault();
 				void engine.goTo(String(this.totalPages || 1));
 				break;
+			default:
+				break;
 		}
-		return false;
-	}
-
-	private onZoomKey(evt: KeyboardEvent, factor: number): boolean {
-		if (isEditableTarget(evt.target)) return true;
-		const engine = this.controller?.currentEngine;
-		if (!engine?.setZoom || !engine.getZoom) return true;
-		engine.setZoom("custom", engine.getZoom().scale * factor);
-		return false;
 	}
 
 	// ---------- 目录 / 批注 / 字号 ----------
@@ -401,18 +403,6 @@ export class ReaderView extends ItemView {
 			const input = window.prompt("笔记内容：");
 			resolve(input === null ? null : input.trim() || "");
 		});
-	}
-
-	/** 字号微调（仅对可重排格式生效；PDF 忽略）。 */
-	private async adjustFont(delta: number): Promise<void> {
-		const engine = this.controller?.currentEngine;
-		if (!engine) return;
-		const cur = this.plugin.settings.reader.fontSize;
-		const next = Math.min(40, Math.max(10, cur + delta));
-		if (next === cur) return;
-		this.plugin.settings.reader.fontSize = next;
-		await this.plugin.saveSettings();
-		engine.applySettings(this.controller!.currentReaderSettings());
 	}
 
 	private showWelcome(): void {

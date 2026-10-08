@@ -7,42 +7,37 @@
 	background: var(--background-primary);
 }
 
-/* 紧凑常驻工具栏（翻页 + 缩放）：非悬浮，尽量少占高度 */
-.nyareader-topbar {
+/* 视图标题栏内的"页码 · 缩放"信息条：与翻译按钮同一行，正文区零占用 */
+.nyareader-header-info {
 	display: flex;
-	gap: 6px;
 	align-items: center;
-	padding: 4px 10px;
-	min-height: 32px;
-	border-bottom: 1px solid var(--background-modifier-border);
-	background: var(--background-primary);
+	gap: 4px;
+	margin: 0 4px;
 }
-.nyareader-topbar.is-hidden {
+.nyareader-header-info.is-hidden {
 	display: none;
 }
-.nyareader-topbar-spacer {
-	flex: 1;
-}
-.nyareader-topbar .nyareader-icon-btn {
+.nyareader-header-info .nyareader-header-btn {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 26px;
-	height: 26px;
+	width: 22px;
+	height: 22px;
 	padding: 0;
-	border: 1px solid transparent;
-	border-radius: 6px;
+	border: none;
+	border-radius: 4px;
 	background: transparent;
 	color: var(--text-muted);
 	cursor: pointer;
+	box-shadow: none;
 }
-.nyareader-topbar .nyareader-icon-btn:hover {
+.nyareader-header-info .nyareader-header-btn:hover {
 	background: var(--background-modifier-hover);
 	color: var(--text-normal);
 }
-.nyareader-topbar .nyareader-icon-btn svg {
-	width: 16px;
-	height: 16px;
+.nyareader-header-info .nyareader-header-btn svg {
+	width: 15px;
+	height: 15px;
 }
 .nyareader-page-indicator,
 .nyareader-zoom-percent {
@@ -55,12 +50,16 @@
 	display: none;
 }
 .nyareader-zoom-select {
-	background: var(--background-primary);
+	background: transparent;
 	color: var(--text-normal);
-	border: 1px solid var(--background-modifier-border);
-	border-radius: 6px;
-	padding: 2px 6px;
+	border: none;
+	border-radius: 4px;
+	padding: 1px 2px;
 	font-size: 12px;
+	box-shadow: none;
+}
+.nyareader-zoom-select:hover {
+	background: var(--background-modifier-hover);
 }
 
 /* 内容区：左目录 / 中央阅读 / 右侧翻译 */
@@ -236,6 +235,9 @@
 }
 .nyareader-pdf-slot canvas {
 	display: block;
+	/* 画布只负责显示：即使是 static 定位也绝不参与命中测试，
+	   保证鼠标事件全部落到上层文本层，划选/复制才可靠 */
+	pointer-events: none;
 }
 /*
  * 文本层必须遵循 pdf.js 4.x 规范：
@@ -251,6 +253,10 @@
 	transform-origin: 0 0;
 	-webkit-text-size-adjust: none;
 	text-size-adjust: none;
+	/* 保证文本层可被选中（复制 / 划词翻译 / 批注） */
+	pointer-events: auto;
+	-webkit-user-select: text;
+	user-select: text;
 	z-index: 2;
 }
 .nyareader-pdf-textlayer span,
@@ -260,6 +266,8 @@
 	cursor: text;
 	color: transparent;
 	transform-origin: 0% 0%;
+	-webkit-user-select: text;
+	user-select: text;
 }
 .nyareader-pdf-textlayer ::selection {
 	background: rgba(90, 130, 255, 0.35);
@@ -278,6 +286,28 @@
 	pointer-events: none;
 	overflow: hidden;
 	z-index: 3;
+}
+/* 链接注释层：容器不拦截事件，只有链接矩形本身可点击 */
+.nyareader-pdf-links {
+	position: absolute;
+	inset: 0;
+	overflow: hidden;
+	pointer-events: none;
+	z-index: 4;
+}
+.nyareader-pdf-link {
+	position: absolute;
+	display: block;
+	pointer-events: auto;
+	cursor: pointer;
+	border-radius: 2px;
+}
+.nyareader-pdf-link.nyareader-pdf-link-internal {
+	cursor: pointer;
+}
+.nyareader-pdf-link:hover {
+	background: rgba(90, 130, 255, 0.18);
+	outline: 1px solid rgba(90, 130, 255, 0.45);
 }
 .nyareader-pdf-annotation-marker {
 	position: absolute;

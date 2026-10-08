@@ -17,6 +17,8 @@ export interface NyaLingoApiShape {
 	onSettingsChange(cb: (cfg: Record<string, unknown>) => void): () => void;
 	testConnection(): Promise<{ ok: boolean; detail?: string }>;
 	openSetupWizard(): void;
+	/** 打开 NyaLingo 真正的设置面板（旧版本可能不存在）。 */
+	openSettings?(): void;
 	clearCache(): Promise<void>;
 }
 
@@ -92,11 +94,18 @@ export class NyaLingoClient {
 		return this.unsub;
 	}
 
-	/** 打开 NyaLingo 设置/安装向导；未安装时触发引导。 */
+	/**
+	 * 打开 NyaLingo 设置面板。
+	 * 优先调用真正的设置界面 openSettings()，旧版本降级到安装向导；未安装时触发引导。
+	 */
 	openSettingsOrWizard(): void {
 		const inst = this.instance();
-		if (inst) inst.openSetupWizard();
-		else this.onMissing();
+		if (!inst) {
+			this.onMissing();
+			return;
+		}
+		if (typeof inst.openSettings === "function") inst.openSettings();
+		else inst.openSetupWizard();
 	}
 
 	async clearCache(): Promise<void> {
