@@ -274,6 +274,22 @@
 	padding: 20px 28px 32px;
 	min-height: 100%;
 }
+/* 页面行：单页一行一页，双页一行两页对开（左右页之间槽宽由行内 gap 控制） */
+.nyareader-pdf-row {
+	display: flex;
+	flex-direction: row;
+	justify-content: center;
+	align-items: center;
+}
+/* 分页模式：锁定自由滚动、隐藏滚动条，翻页由引擎的 next/prev/滚轮驱动 */
+.nyareader-reading.nyareader-pdf-root.is-paged {
+	overflow: hidden;
+}
+.nyareader-reading.nyareader-pdf-root.is-paged::-webkit-scrollbar {
+	display: none;
+	width: 0;
+	height: 0;
+}
 .nyareader-pdf-slot {
 	position: relative;
 	flex: 0 0 auto;

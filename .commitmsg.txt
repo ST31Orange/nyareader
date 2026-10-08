@@ -1,0 +1,13 @@
+feat(pdf): PDF 支持滚动/分页 与 单页/双页（对开）模式 (v0.3.25)
+
+之前 PDF 的 capabilities 没有 modeSwitch/layoutSwitch，两个切换按钮对它
+无效（锁死）。本次为 PdfEngine 完整接入：
+
+- capabilities 改为 getter：zoom/pageNav/modeSwitch/layoutSwitch 全开
+- 页面按"行"分组布局：单页一行一页、双页一行两页对开（1|2 → 3|4）
+- 滚动模式：连续滚动；分页模式：锁定滚动（隐藏滚动条）+ 滚轮/方向键/翻页键翻页
+- 缩放按模式计算：滚动=适应宽度（单页或对开占满宽度），分页=适应高度
+- 分页+双页时当前页取奇数（对开左页），一次翻两页
+- switchMode() 支持视图层 toggleReadingMode；视图层 toggleLayout 对 PDF
+  跳过百分比 goTo（PDF 用页码，applySettings 已按锚点保持位置）
+单测 99/99

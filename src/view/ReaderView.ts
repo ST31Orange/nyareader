@@ -284,10 +284,13 @@ export class ReaderView extends ItemView {
 		override.layout = next;
 		this.plugin.settings.bookOverrides[book.fingerprint] = override;
 		await this.plugin.saveSettings();
-		// 布局切换会改变内容高度：按百分比还原位置，并刷新分页 UI（总页数/页码）
+		// 布局切换会改变内容高度：按百分比还原位置，并刷新分页 UI（总页数/页码）。
+		// PDF 的 goTo 用页码而非百分比，applySettings 已按锚点保持位置，跳过百分比定位。
 		const pct = engine.currentPercentage();
 		engine.applySettings(this.controller?.currentReaderSettings() ?? this.plugin.settings.reader);
-		if (engine.capabilities?.pageNav) void engine.goTo(String(Math.round(pct * 10000)));
+		if (engine.capabilities?.pageNav && this.controller?.currentBook?.format !== "pdf") {
+			void engine.goTo(String(Math.round(pct * 10000)));
+		}
 		this.syncPagingUi();
 		this.updatePageIndicator(engine.currentLocation?.() ?? "1");
 	}

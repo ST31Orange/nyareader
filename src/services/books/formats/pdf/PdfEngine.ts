@@ -76,7 +76,9 @@ const FIT_HEIGHT_BOOST = 1.08;
 
 export class PdfEngine implements IReaderEngine {
 	readonly format = "pdf";
-	readonly capabilities: ReaderEngineCapabilities = { zoom: true, pageNav: true };
+	get capabilities(): ReaderEngineCapabilities {
+		return { zoom: true, pageNav: true, modeSwitch: true, layoutSwitch: true };
+	}
 
 	private emitter = new SimpleReaderEmitter();
 	private container!: HTMLElement;
@@ -87,6 +89,8 @@ export class PdfEngine implements IReaderEngine {
 	private doc: PDFDocumentProxy | null = null;
 	private destroyed = false;
 	private settings: ReaderSettings = { fontFamily: "system-ui", fontSize: 18, lineHeight: 1.8, margin: 24, theme: "light", layout: "single", scrollMode: true, pageWidth: 420 };
+	/** 页面行容器（单页：一行一页；双页：一行两页对开）。 */
+	private rows: HTMLElement[] = [];
 
 	private scale = 1;
 	private zoomMode: ZoomMode = "fit-width";
@@ -140,6 +144,7 @@ export class PdfEngine implements IReaderEngine {
 			this.attachListeners();
 			this.applyThemeClass();
 			this.relayout(false);
+			this.applyPagedMode();
 			await this.renderWindow();
 			if (this.destroyed) return;
 			this.emitLocation(true);
@@ -162,10 +167,12 @@ export class PdfEngine implements IReaderEngine {
 		if (this.scrollRaf) cancelAnimationFrame(this.scrollRaf);
 		this.scrollRaf = 0;
 		this.slots = [];
+		this.rows = [];
 		this.pagesEl?.empty();
 		this.container?.removeClass("nyareader-pdf-root");
 		this.container?.removeClass("is-theme-dark");
 		this.container?.removeClass("is-theme-sepia");
+		this.container?.removeClass("is-paged");
 	}
 
 	// ---------- 缩放 ----------
@@ -184,19 +191,26 @@ export class PdfEngine implements IReaderEngine {
 		return { mode: this.zoomMode, scale: this.scale, percent: Math.round(this.scale * 100) };
 	}
 
-	/** Ctrl/⌘ + 滚轮缩放（以当前阅读位置为锚点）。 */
+	/** 滚轮：Ctrl/⌘+滚轮缩放；分页模式下普通滚轮即翻页。 */
 	private onWheel(evt: WheelEvent): void {
-		if (!(evt.ctrlKey || evt.metaKey)) return; // 普通滚轮交给浏览器原生滚动
-		evt.preventDefault();
-		this.pendingWheelFactor *= evt.deltaY < 0 ? WHEEL_ZOOM_STEP : 1 / WHEEL_ZOOM_STEP;
-		if (this.wheelRaf) return;
-		this.wheelRaf = requestAnimationFrame(() => {
-			this.wheelRaf = 0;
-			const factor = this.pendingWheelFactor;
-			this.pendingWheelFactor = 1;
-			const next = clamp(this.scale * factor, MIN_SCALE, MAX_SCALE);
-			this.setZoom("custom", next);
-		});
+		if (evt.ctrlKey || evt.metaKey) {
+			evt.preventDefault();
+			this.pendingWheelFactor *= evt.deltaY < 0 ? WHEEL_ZOOM_STEP : 1 / WHEEL_ZOOM_STEP;
+			if (this.wheelRaf) return;
+			this.wheelRaf = requestAnimationFrame(() => {
+				this.wheelRaf = 0;
+				const factor = this.pendingWheelFactor;
+				this.pendingWheelFactor = 1;
+				const next = clamp(this.scale * factor, MIN_SCALE, MAX_SCALE);
+				this.setZoom("custom", next);
+			});
+			return;
+		}
+		if (!this.scrollModeActive()) {
+			// 分页模式：普通滚轮即翻页
+			evt.preventDefault();
+			if (evt.deltaY !== 0) void (evt.deltaY > 0 ? this.nextPage() : this.prevPage());
+		}
 	}
 
 	private emitZoom(): void {
@@ -206,7 +220,9 @@ export class PdfEngine implements IReaderEngine {
 	// ---------- 页面导航 ----------
 
 	async goTo(location: string): Promise<void> {
-		const n = clamp(pageNumber(location), 1, Math.max(1, this.slots.length));
+		let n = clamp(pageNumber(location), 1, Math.max(1, this.slots.length));
+		// 分页+双页对开：当前页取奇数（对开左页），如 1|2、3|4
+		if (!this.scrollModeActive() && this.spreadActive() && n % 2 === 0) n -= 1;
 		const slot = this.slots[n - 1];
 		if (!slot) return;
 		this.currentPage = n;
@@ -216,11 +232,16 @@ export class PdfEngine implements IReaderEngine {
 	}
 
 	async nextPage(): Promise<void> {
-		await this.goTo(String(this.currentPage + 1));
+		await this.goTo(String(this.currentPage + this.pageStep()));
 	}
 
 	async prevPage(): Promise<void> {
-		await this.goTo(String(this.currentPage - 1));
+		await this.goTo(String(this.currentPage - this.pageStep()));
+	}
+
+	/** 滚动/分页模式切换（视图层 toggleReadingMode 调用）。 */
+	switchMode(scrollMode: boolean): void {
+		this.applySettings({ ...this.settings, scrollMode });
 	}
 
 	currentLocation(): string {
@@ -230,6 +251,21 @@ export class PdfEngine implements IReaderEngine {
 	currentPercentage(): number {
 		const total = this.slots.length;
 		return total === 0 ? 0 : this.currentPage / total;
+	}
+
+	/** 当前是否为滚动模式（false = 分页）。 */
+	private scrollModeActive(): boolean {
+		return this.settings.scrollMode !== false;
+	}
+
+	/** 当前是否为双页对开布局。 */
+	private spreadActive(): boolean {
+		return this.settings.layout === "double";
+	}
+
+	/** 分页模式下的"一次翻几页"：双页对开按对开翻（2 页），否则 1 页。 */
+	private pageStep(): number {
+		return !this.scrollModeActive() && this.spreadActive() ? 2 : 1;
 	}
 
 	/** 视口中线所在页。 */
@@ -274,8 +310,18 @@ export class PdfEngine implements IReaderEngine {
 		this.baseW = v1.width || 612;
 		this.baseH = v1.height || 792;
 		this.slots = [];
+		this.rows = [];
 		const frag = document.createDocumentFragment();
+		const cols = this.spreadActive() ? 2 : 1;
+		let row: HTMLElement | null = null;
 		for (let i = 1; i <= doc.numPages; i++) {
+			if (!row || (i - 1) % cols === 0) {
+				row = document.createElement("div");
+				row.className = "nyareader-pdf-row";
+				row.style.gap = `${PAGE_GAP}px`;
+				this.rows.push(row);
+				frag.appendChild(row);
+			}
 			const el = document.createElement("div");
 			el.className = "nyareader-pdf-slot";
 			el.dataset.page = String(i);
@@ -297,25 +343,43 @@ export class PdfEngine implements IReaderEngine {
 				renderGen: -1,
 			};
 			this.slots.push(slot);
-			frag.appendChild(el);
+			row.appendChild(el);
 		}
 		this.pagesEl.appendChild(frag);
 	}
 
-	/** 计算当前缩放比（按模式）。 */
+	/** 单/双页切换后重新把页面槽按行分组（不重新渲染，仅重排 DOM）。 */
+	private rebuildRows(): void {
+		this.pagesEl.empty();
+		this.rows = [];
+		const cols = this.spreadActive() ? 2 : 1;
+		let row: HTMLElement | null = null;
+		this.slots.forEach((slot, i) => {
+			if (cols === 1 || i % cols === 0) {
+				row = document.createElement("div");
+				row.className = "nyareader-pdf-row";
+				row.style.gap = `${PAGE_GAP}px`;
+				this.rows.push(row);
+				this.pagesEl.appendChild(row);
+			}
+			row!.appendChild(slot.el);
+		});
+	}
+
+	/** 计算当前缩放比（兼容滚动/分页 与 单页/双页）。 */
 	private computeScale(): number {
 		const availW = this.availableWidth();
 		const availH = this.availableHeight();
-		switch (this.zoomMode) {
-			case "fit-height":
-				// 适应高度并略微放大；用适应宽度封顶避免横向滚动
-				return clamp(Math.min(availW / this.baseW, (availH / this.baseH) * FIT_HEIGHT_BOOST), MIN_SCALE, MAX_SCALE);
-			case "custom":
-				return clamp(this.zoomValue, MIN_SCALE, MAX_SCALE);
-			case "fit-width":
-			default:
-				return clamp(availW / this.baseW, MIN_SCALE, MAX_SCALE);
+		const cols = this.spreadActive() ? 2 : 1;
+		// 单页 = 页宽；双页 = 两页并排 + 中间槽宽
+		const unitW = this.baseW * cols + (cols > 1 ? PAGE_GAP : 0);
+		if (this.zoomMode === "custom") return clamp(this.zoomValue, MIN_SCALE, MAX_SCALE);
+		if (this.zoomMode === "fit-height" || !this.scrollModeActive()) {
+			// 分页模式 / 适应高度：整页（或对开）按高度放满，宽度封顶避免横向溢出
+			return clamp(Math.min(availW / unitW, (availH / this.baseH) * FIT_HEIGHT_BOOST), MIN_SCALE, MAX_SCALE);
 		}
+		// 滚动模式：适应宽度（单页或对开整体占满宽度）
+		return clamp(availW / unitW, MIN_SCALE, MAX_SCALE);
 	}
 
 	private availableWidth(): number {
@@ -605,9 +669,20 @@ export class PdfEngine implements IReaderEngine {
 	// ---------- 设置 ----------
 
 	applySettings(settings: ReaderSettings): void {
+		const prevScroll = this.settings.scrollMode;
+		const prevLayout = this.settings.layout;
 		this.settings = { ...settings };
 		this.applyThemeClass();
 		if (!this.doc || this.slots.length === 0) return;
+		// 滚动/分页 或 单页/双页 变化：重新按行分组并整体重排
+		if (prevScroll !== this.settings.scrollMode || prevLayout !== this.settings.layout) {
+			this.rebuildRows();
+			this.relayout(true);
+			this.emitZoom();
+			this.applyPagedMode();
+			void this.renderWindow();
+			return;
+		}
 		// 仅当缩放模式随容器变化时才重排，避免无谓重渲染。
 		if (this.zoomMode === "fit-width" || this.zoomMode === "fit-height") {
 			const next = this.computeScale();
@@ -616,6 +691,17 @@ export class PdfEngine implements IReaderEngine {
 				this.emitZoom();
 				void this.renderWindow();
 			}
+		}
+		this.applyPagedMode();
+	}
+
+	/** 分页模式：锁定滚动（隐藏滚动条、禁自由滚动），翻页由 next/prev/滚轮驱动。 */
+	private applyPagedMode(): void {
+		if (!this.container) return;
+		const paged = !this.scrollModeActive();
+		this.container.toggleClass("is-paged", paged);
+		if (paged && this.slots.length) {
+			this.scrollToSlot(this.slots[this.currentPage - 1] ?? this.slots[0]);
 		}
 	}
 
