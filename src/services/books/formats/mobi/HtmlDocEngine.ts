@@ -1,7 +1,19 @@
 /**
- * HTML 文档引擎：渲染单个 HTML 字符串（MOBI/AZW3 提取结果）到 iframe。
- * 支持滚动模式、主题/字号/行距/边距、选中文本、进度（按滚动比例）。
- * 与 epub.js 分离，避免重型依赖；适用于单文档格式。
+ * HTML 文档引擎：渲染单个 HTML 字符串（EPUB/MOBI/AZW3 提取结果）到 iframe。
+ *
+ * 两种阅读模式：
+ * - 滚动模式（scrollMode=true）：正文连续单栏滚动。
+ * - 分页模式（scrollMode=false）：真正的按页排版——
+ *   把正文放进 CSS 多栏容器（固定栏宽=页宽、栏高=页高、column-fill:auto），
+ *   每一栏就是一页，页号按内容先后严格连续（第 1 页排满才进第 2 页）。
+ *   阅读窗口只显示当前一页（单页模式）或两页对开（双页模式：1|2 → 3|4 → …），
+ *   通过水平位移把对应栏移入窗口。
+ *
+ * 关键实现点：
+ * 1. 多栏容器宽度设为极大值以容纳大量"页"，column-fill:auto 保证每栏排满才换栏；
+ * 2. 顶层元素一律 max-width = 页宽，避免 EPUB 里 width:100% 的元素被撑成整页宽度；
+ * 3. 页数测量：取最后一个有内容的子元素 offsetLeft / (页宽+栏距)；
+ * 4. 翻页 = 换页（translateX），不是滚屏，因此页号严格 1|2、3|4。
  */
 import type { AnnotationTarget, IReaderEngine, ReaderEngineEvents, ReaderEngineCapabilities, ZoomMode } from "../../IReaderEngine";
 import { SimpleReaderEmitter } from "../../IReaderEngine";
@@ -16,10 +28,17 @@ export interface HtmlDocEngineOptions {
 }
 
 const THEME_CSS: Record<ReaderSettings["theme"], string> = {
-	light: "html { background:#fff; } body { color:#1f1f1f; }",
-	dark: "html { background:#1e1e1e; } body { color:#cfcfcf; } a { color:#8ab4f8; }",
-	sepia: "html { background:#f4ecd8; } body { color:#5b4636; }",
+	light: "html { background:#f2f2f2; } body { color:#1f1f1f; }",
+	dark: "html { background:#141416; } body { color:#cfcfcf; } a { color:#8ab4f8; }",
+	sepia: "html { background:#e9e0cd; } body { color:#5b4636; }",
 };
+
+/** 双页对开时左右页之间的槽宽（px） */
+const GUTTER = 40;
+/** 多栏容器的最大列数（即最大页数上限） */
+const MAX_COLUMNS = 2000;
+/** 多栏容器的固定宽度：足够容纳 MAX_COLUMNS 个页 */
+const COLS_WIDTH = 1_200_000;
 
 export class HtmlDocEngine implements IReaderEngine {
 	get format(): string {
@@ -36,8 +55,22 @@ export class HtmlDocEngine implements IReaderEngine {
 	private destroyed = false;
 	/** 文本缩放系数（叠加在设置字号上），默认 100% */
 	private zoomScale = 1;
-	/** 分页模式：按视口一页一页翻（scrollMode=false 时启用） */
-	private snapTimer: number | null = null;
+
+	// ---------- 分页状态 ----------
+	/** 阅读窗口（固定大小、overflow hidden，居中） */
+	private paged: HTMLElement | null = null;
+	/** 多栏容器（一栏一页） */
+	private columnsEl: HTMLElement | null = null;
+	private pages = 0;
+	/** 当前第几页（双页模式下恒为奇数，表示对开的左页） */
+	private currentPage = 1;
+	private pageW = 480;
+	private pageH = 680;
+	private gutter = GUTTER;
+
+	private resizeBound = (): void => {
+		if (this.isPaged()) this.relayoutPages(true);
+	};
 
 	constructor(private opts: HtmlDocEngineOptions) {}
 
@@ -76,7 +109,6 @@ export class HtmlDocEngine implements IReaderEngine {
 			const sel = this.getSelection();
 			if (sel) this.emitter.emit("selection", { text: sel.text });
 		});
-		// iframe 内的键盘/滚轮事件不会冒泡到父文档，必须在内容窗口内处理
 		win?.addEventListener?.("wheel", (e: WheelEvent) => {
 			if (e.ctrlKey) {
 				e.preventDefault();
@@ -86,17 +118,16 @@ export class HtmlDocEngine implements IReaderEngine {
 			if (this.isPaged()) {
 				// 分页模式：滚轮即翻页
 				e.preventDefault();
-				if (e.deltaY !== 0) {
-					void (e.deltaY > 0 ? this.nextPage() : this.prevPage());
-				}
+				if (e.deltaY !== 0) void (e.deltaY > 0 ? this.nextPage() : this.prevPage());
 			}
 		}, { passive: false });
 		win?.addEventListener?.("keydown", (e: KeyboardEvent) => this.onContentKeydown(e));
 		win?.addEventListener?.("scroll", () => {
+			if (this.isPaged()) return;
 			const pct = this.currentPercentage();
 			this.emitter.emit("locationChanged", { location: this.currentLocation(), percentage: pct });
-			if (this.isPaged()) this.scheduleSnap();
 		}, { passive: true });
+		win?.addEventListener?.("resize", this.resizeBound);
 	}
 
 	/** 分页模式 = 设置里未开启滚动模式。 */
@@ -104,7 +135,13 @@ export class HtmlDocEngine implements IReaderEngine {
 		return this.settings.scrollMode === false;
 	}
 
-	/** iframe 内容窗口内的键盘：翻页/滚动与 Ctrl 缩放。 */
+	/** 双页对开 = 分页模式 + layout==="double"。 */
+	private isDouble(): boolean {
+		return this.settings.layout === "double";
+	}
+
+	// ---------- 键盘（iframe 内容窗口内） ----------
+
 	private onContentKeydown(e: KeyboardEvent): void {
 		const mod = e.ctrlKey || e.metaKey;
 		if (mod) {
@@ -120,18 +157,17 @@ export class HtmlDocEngine implements IReaderEngine {
 			}
 			return;
 		}
-		const win = this.iframe.contentWindow;
-		if (!win) return;
 		switch (e.key) {
 			case "ArrowUp":
-				e.preventDefault();
-				if (this.isPaged()) void this.prevPage();
-				else this.scrollStep(-1);
-				break;
 			case "ArrowDown":
 				e.preventDefault();
-				if (this.isPaged()) void this.nextPage();
-				else this.scrollStep(1);
+				if (this.isPaged()) {
+					// 分页模式：上下=翻页
+					void (e.key === "ArrowDown" ? this.nextPage() : this.prevPage());
+				} else {
+					// 滚动模式：上下=逐行滚动
+					this.scrollStep(e.key === "ArrowDown" ? 1 : -1);
+				}
 				break;
 			case "ArrowLeft":
 			case "PageUp":
@@ -145,16 +181,23 @@ export class HtmlDocEngine implements IReaderEngine {
 				break;
 			case "Home":
 				e.preventDefault();
-				win.scrollTo(0, 0);
+				if (this.isPaged()) this.showPage(1);
+				else this.iframe.contentWindow?.scrollTo(0, 0);
 				this.emitProgress();
 				break;
 			case "End":
 				e.preventDefault();
-				win.scrollTo(0, win.document.documentElement.scrollHeight);
+				if (this.isPaged()) this.showPage(this.pages || 1);
+				else {
+					const win = this.iframe.contentWindow;
+					if (win) win.scrollTo(0, win.document.documentElement.scrollHeight);
+				}
 				this.emitProgress();
 				break;
 		}
 	}
+
+	// ---------- 缩放（字号放大缩小，重排分页） ----------
 
 	setZoom(mode: ZoomMode, value?: number): void {
 		if (mode === "fit-width" || mode === "fit-height") {
@@ -163,7 +206,7 @@ export class HtmlDocEngine implements IReaderEngine {
 			this.zoomScale = value;
 		}
 		if (!this.doc) return;
-		this.reapplyStyle();
+		this.applySettings(this.settings);
 		this.emitter.emit("zoomChanged", { mode: "custom", percent: Math.round(this.zoomScale * 100) });
 	}
 
@@ -182,41 +225,53 @@ export class HtmlDocEngine implements IReaderEngine {
 
 	unmount(): void {
 		this.destroyed = true;
-		if (this.snapTimer !== null) window.clearTimeout(this.snapTimer);
-		this.snapTimer = null;
+		const win = this.iframe.contentWindow;
+		win?.removeEventListener?.("resize", this.resizeBound);
 		this.iframe?.remove();
 	}
+
+	// ---------- 跳转 ----------
 
 	async goTo(location: string): Promise<void> {
 		// 目录锚点（MOBI 内部跳转统一改写为 #nyareader-fp-NNN）
 		if (location.startsWith("#")) {
 			const doc = this.iframe?.contentDocument;
 			const target = doc?.getElementById(location.slice(1));
-			if (target && "scrollIntoView" in target) {
-				(target as HTMLElement).scrollIntoView({ block: "start" });
+			if (target && "getBoundingClientRect" in target) {
+				if (this.isPaged()) this.showPage(this.pageOfElement(target as HTMLElement));
+				else (target as HTMLElement).scrollIntoView({ block: "start" });
 			}
 			this.emitProgress();
 			return;
 		}
-		// 定位为滚动比例（0~10000 的整数）
 		const pct = parseInt(location, 10);
 		if (Number.isNaN(pct)) return;
+		if (this.isPaged()) {
+			const page = Math.max(1, Math.round((pct / 10000) * (this.pages || 1)));
+			this.showPage(page);
+			return;
+		}
 		const win = this.iframe.contentWindow;
 		if (!win) return;
-		const doc = win.document;
-		const max = Math.max(1, doc.documentElement.scrollHeight - win.innerHeight);
+		const d = win.document;
+		const max = Math.max(1, d.documentElement.scrollHeight - win.innerHeight);
 		win.scrollTo(0, (pct / 10000) * max);
 		this.emitProgress();
 	}
 
+	/** 锚点元素在第几页（分页模式）：按元素相对阅读窗口的横坐标反推列号。 */
+	private pageOfElement(el: HTMLElement): number {
+		const bookRect = this.paged?.getBoundingClientRect();
+		const elRect = el.getBoundingClientRect();
+		if (!bookRect) return this.currentPage;
+		const x = elRect.left - bookRect.left;
+		const col = Math.round(x / (this.pageW + this.gutter));
+		return Math.max(1, Math.min(this.pages, this.currentPage - 1 + col + 1));
+	}
+
 	async nextPage(): Promise<void> {
 		if (this.isPaged()) {
-			const win = this.iframe.contentWindow;
-			if (win) {
-				win.scrollBy({ top: win.innerHeight, behavior: "auto" });
-				this.snapToPage();
-				this.emitProgress();
-			}
+			this.showPage(this.currentPage + (this.isDouble() ? 2 : 1));
 			return;
 		}
 		this.iframe.contentWindow?.scrollBy({ top: this.iframe.clientHeight * 0.9, behavior: "smooth" });
@@ -224,29 +279,220 @@ export class HtmlDocEngine implements IReaderEngine {
 
 	async prevPage(): Promise<void> {
 		if (this.isPaged()) {
-			const win = this.iframe.contentWindow;
-			if (win) {
-				win.scrollBy({ top: -win.innerHeight, behavior: "auto" });
-				this.snapToPage();
-				this.emitProgress();
-			}
+			this.showPage(this.currentPage - (this.isDouble() ? 2 : 1));
 			return;
 		}
 		this.iframe.contentWindow?.scrollBy({ top: -this.iframe.clientHeight * 0.9, behavior: "smooth" });
 	}
 
-	/** 切换滚动/分页模式并保持当前阅读位置（按百分比还原，两种模式语义一致）。 */
+	/** 分页总页数（滚动模式返回 0）。 */
+	getTotalPages(): number {
+		return this.isPaged() ? this.pages : 0;
+	}
+
+	currentLocation(): string {
+		return String(Math.round(this.currentPercentage() * 10000));
+	}
+
+	currentPercentage(): number {
+		if (this.isPaged()) {
+			if (this.pages <= 1) return 0;
+			return Math.min(1, Math.max(0, (this.currentPage - 0.5) / this.pages));
+		}
+		const win = this.iframe.contentWindow;
+		if (!win) return 0;
+		const doc = win.document;
+		const max = Math.max(1, doc.documentElement.scrollHeight - win.innerHeight);
+		return Math.min(1, Math.max(0, win.scrollY / max));
+	}
+
+	// ---------- 版式应用 / 分页结构 ----------
+
+	applySettings(settings: ReaderSettings): void {
+		this.settings = { ...settings };
+		if (!this.doc) return;
+		this.applyBaseStyle();
+		if (this.isPaged()) {
+			this.wrapPaged();
+			this.relayoutPages(false);
+		} else {
+			this.unwrapPaged();
+		}
+	}
+
+	/** 切换滚动/分页模式并保持当前阅读位置。 */
 	switchMode(scrollMode: boolean): void {
 		const pct = this.currentPercentage();
 		this.settings = { ...this.settings, scrollMode };
-		this.reapplyStyle();
-		const win = this.iframe.contentWindow;
-		if (win) {
-			const doc = win.document;
-			const max = Math.max(1, doc.documentElement.scrollHeight - win.innerHeight);
-			win.scrollTo(0, pct * max);
+		if (!this.doc) return;
+		this.applySettings(this.settings);
+		if (this.isPaged()) {
+			const page = Math.max(1, Math.round(pct * (this.pages || 1)));
+			this.showPage(page, false);
+		} else {
+			const win = this.iframe.contentWindow;
+			if (win) {
+				const d = win.document;
+				const max = Math.max(1, d.documentElement.scrollHeight - win.innerHeight);
+				win.scrollTo(0, pct * max);
+			}
 		}
 		this.emitProgress();
+	}
+
+	/** 把 body 内容搬进"阅读窗口 > 多栏容器"，进入分页模式。 */
+	private wrapPaged(): void {
+		if (this.paged && this.paged.isConnected) return;
+		const doc = this.doc;
+		const body = doc?.body;
+		if (!doc || !body) return;
+		this.paged = doc.createElement("div");
+		this.paged.className = "nyareader-book";
+		this.columnsEl = doc.createElement("div");
+		this.columnsEl.className = "nyareader-columns";
+		while (body.firstChild) this.columnsEl.appendChild(body.firstChild);
+		this.paged.appendChild(this.columnsEl);
+		body.appendChild(this.paged);
+	}
+
+	/** 把内容搬回 body 正常流，退出分页模式。 */
+	private unwrapPaged(): void {
+		const body = this.doc?.body;
+		if (!body || !this.paged) return;
+		if (this.columnsEl) {
+			while (this.columnsEl.firstChild) body.appendChild(this.columnsEl.firstChild);
+		}
+		this.paged.remove();
+		this.paged = null;
+		this.columnsEl = null;
+	}
+
+	/** 注入基础样式：主题/字号/行距 + 分页版式。 */
+	private applyBaseStyle(): void {
+		if (!this.doc) return;
+		const styleId = "nyareader-style";
+		this.doc.getElementById(styleId)?.remove();
+		const style = this.doc.createElement("style");
+		style.id = styleId;
+		const paged = this.isPaged();
+		const dark = this.settings.theme === "dark";
+		const m = this.settings.margin;
+		style.textContent = `
+			${THEME_CSS[this.settings.theme]}
+			:root { --nyar-page-w: 480px; --nyar-page-h: 680px; --nyar-gutter: ${GUTTER}px; }
+			html { font-size: ${this.effectiveFontSize()}px; }
+			body {
+				font-family: ${this.settings.fontFamily};
+				line-height: ${this.settings.lineHeight};
+				margin: ${paged ? 0 : `${m}px ${m * 1.6}px`};
+				padding: 0;
+				overflow: ${paged ? "hidden" : "auto"};
+			}
+			p { margin: 0 0 0.8em 0; }
+			h1, h2, h3, h4 { break-after: avoid; }
+			/* KF8 内嵌资源（kindle:embed:/flow:）无法在浏览器解析，隐藏避免破图 */
+			img[src^="kindle:"], image[src^="kindle:"], img[src=""] { display: none; }
+			a[href^="kindle:"] { pointer-events: none; }
+			* { user-select: text; }
+			/* 分页版式：阅读窗口 + 多栏（一栏一页） */
+			.nyareader-book {
+				position: absolute;
+				left: 50%; top: 50%;
+				transform: translate(-50%, -50%);
+				overflow: hidden;
+				background: ${dark ? "#212124" : "#ffffff"};
+				box-shadow: 0 2px 18px rgba(0,0,0,${dark ? 0.45 : 0.16});
+			}
+			.nyareader-columns {
+				position: relative;
+				width: ${COLS_WIDTH}px;
+				height: 100%;
+				column-width: var(--nyar-page-w);
+				column-count: ${MAX_COLUMNS};
+				column-gap: var(--nyar-gutter);
+				column-fill: auto;
+			}
+			/* 顶层元素不能超出页宽：避免 width:100% 被多栏容器(极宽)撑爆 */
+			.nyareader-columns > * {
+				max-width: var(--nyar-page-w) !important;
+				box-sizing: border-box;
+			}
+			.nyareader-columns p, .nyareader-columns li, .nyareader-columns blockquote,
+			.nyareader-columns h1, .nyareader-columns h2, .nyareader-columns h3,
+			.nyareader-columns h4, .nyareader-columns figure {
+				break-inside: avoid;
+			}
+		`;
+		this.doc.head.appendChild(style);
+	}
+
+	/** 根据当前布局（单/双页）与视口尺寸计算页宽/页高。 */
+	private computePageDims(): { w: number; h: number } {
+		const win = this.iframe.contentWindow;
+		const vw = win?.innerWidth || 800;
+		const vh = win?.innerHeight || 600;
+		const pad = 64;
+		const availW = Math.max(240, vw - pad);
+		const availH = Math.max(300, vh - pad);
+		const w = this.isDouble()
+			? Math.round(Math.min(680, Math.max(260, (availW - this.gutter) / 2)))
+			: Math.round(Math.min(760, Math.max(320, availW)));
+		const h = Math.round(Math.min(availH, w * 1.414));
+		return { w, h };
+	}
+
+	/** 分页重排：更新页尺寸、测量页数、按进度还原当前页并定位。 */
+	private relayoutPages(emit: boolean): void {
+		if (!this.isPaged() || !this.doc || !this.paged || !this.columnsEl) return;
+		const { w, h } = this.computePageDims();
+		this.pageW = w;
+		this.pageH = h;
+		const root = this.doc.documentElement;
+		root.style.setProperty("--nyar-page-w", `${w}px`);
+		root.style.setProperty("--nyar-page-h", `${h}px`);
+		root.style.setProperty("--nyar-gutter", `${this.gutter}px`);
+		const bookW = this.isDouble() ? w * 2 + this.gutter : w;
+		this.paged.style.width = `${bookW}px`;
+		this.paged.style.height = `${h}px`;
+
+		const prevPct = this.pages > 0 ? (this.currentPage - 0.5) / this.pages : 0;
+		this.pages = this.measurePages();
+		this.currentPage = Math.max(1, Math.min(this.pages, Math.round(prevPct * this.pages) || 1));
+		if (this.isDouble() && this.currentPage % 2 === 0) this.currentPage -= 1;
+		const vis = this.currentPage - 1;
+		this.columnsEl.style.transform = `translateX(${-vis * (w + this.gutter)}px)`;
+		if (emit) this.emitProgress();
+	}
+
+	/** 测量总页数：最后一个有内容的子元素所在列号 + 1。 */
+	private measurePages(): number {
+		const cols = this.columnsEl;
+		if (!cols) return 1;
+		const children = Array.from(cols.children) as HTMLElement[];
+		let last: HTMLElement | null = null;
+		for (let i = children.length - 1; i >= 0; i--) {
+			const el = children[i];
+			if (el.getBoundingClientRect().height > 0) {
+				last = el;
+				break;
+			}
+		}
+		if (!last) return 1;
+		const page = Math.max(1, Math.round(last.offsetLeft / (this.pageW + this.gutter)) + 1);
+		return page;
+	}
+
+	/** 定位到某页（翻页/跳转共用）。双页模式下左页恒为奇数。 */
+	private showPage(page: number, emit = true): void {
+		if (this.pages < 1 || !this.columnsEl) {
+			this.currentPage = page;
+			return;
+		}
+		this.currentPage = Math.max(1, Math.min(this.pages, page));
+		if (this.isDouble() && this.currentPage % 2 === 0) this.currentPage -= 1;
+		const vis = this.currentPage - 1;
+		this.columnsEl.style.transform = `translateX(${-vis * (this.pageW + this.gutter)}px)`;
+		if (emit) this.emitProgress();
 	}
 
 	/** 滚动模式：↑/↓ 方向键按行滚动（保持原生文档手感，不整页翻）。 */
@@ -255,82 +501,6 @@ export class HtmlDocEngine implements IReaderEngine {
 		if (!win) return;
 		const linePx = Math.max(1, this.effectiveFontSize() * this.settings.lineHeight);
 		win.scrollBy({ top: direction * linePx, behavior: "auto" });
-	}
-
-	/** 分页总页数（按内容高度/视口高度估算）。 */
-	getTotalPages(): number {
-		const win = this.iframe?.contentWindow;
-		const doc = win?.document?.documentElement;
-		if (!win || !doc) return 0;
-		const h = doc.scrollHeight;
-		const vh = win.innerHeight;
-		if (!h || !vh) return 0;
-		return Math.max(1, Math.ceil(h / vh));
-	}
-
-	/** 滚动结束后吸附到最近的页边界（分页模式）。 */
-	private scheduleSnap(): void {
-		if (this.snapTimer !== null) window.clearTimeout(this.snapTimer);
-		this.snapTimer = window.setTimeout(() => {
-			this.snapTimer = null;
-			this.snapToPage();
-		}, 90);
-	}
-
-	private snapToPage(): void {
-		const win = this.iframe?.contentWindow;
-		if (!win) return;
-		const vh = win.innerHeight || 600;
-		const page = Math.round(win.scrollY / vh);
-		const next = page * vh;
-		if (Math.abs(win.scrollY - next) > 1) win.scrollTo(0, next);
-	}
-
-	currentLocation(): string {
-		return String(Math.round(this.currentPercentage() * 10000));
-	}
-
-	currentPercentage(): number {
-		const win = this.iframe.contentWindow;
-		if (!win) return 0;
-		const doc = win.document;
-		const max = Math.max(1, doc.documentElement.scrollHeight - win.innerHeight);
-		return Math.min(1, Math.max(0, win.scrollY / max));
-	}
-
-	applySettings(settings: ReaderSettings): void {
-		this.settings = { ...settings };
-		this.reapplyStyle();
-	}
-
-	/** 重建注入样式（主题/字号/行距/边距/缩放统一入口）。 */
-	private reapplyStyle(): void {
-		if (!this.doc) return;
-		const styleId = "nyareader-style";
-		this.doc.getElementById(styleId)?.remove();
-		const style = this.doc.createElement("style");
-		style.id = styleId;
-		style.textContent = `
-			${THEME_CSS[this.settings.theme]}
-			html { font-size: ${this.effectiveFontSize()}px; }
-			body {
-				font-family: ${this.settings.fontFamily};
-				line-height: ${this.settings.lineHeight};
-				margin: ${this.settings.margin}px ${this.settings.margin * 1.6}px;
-				padding: 0;
-				overflow-y: auto;
-				/* 双页模式：两栏并排（如书摊开），滚动/分页都按视口一屏一屏走 */
-				${this.settings.layout === "double" ? `column-count: 2; column-gap: ${Math.max(28, this.settings.margin * 1.5)}px;` : ""}
-			}
-			p { margin: 0 0 0.8em 0; }
-			h1, h2, h3 { break-after: avoid; }
-			/* KF8 内嵌资源（kindle:embed:/flow:）无法在浏览器解析，隐藏避免破图 */
-			img[src^="kindle:"], image[src^="kindle:"], img[src=""] { display: none; }
-			a[href^="kindle:"] { pointer-events: none; }
-			* { user-select: text; }
-			${this.isPaged() ? "html, body { scrollbar-width: none; } body::-webkit-scrollbar { display: none; }" : ""}
-		`;
-		this.doc.head.appendChild(style);
 	}
 
 	getSelection(): { text: string; target?: AnnotationTarget } | null {
