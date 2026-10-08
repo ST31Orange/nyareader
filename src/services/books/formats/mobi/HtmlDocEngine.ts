@@ -41,6 +41,8 @@ const PAGE_MARGIN_X = 32;
 const PAGE_MARGIN_Y = 20;
 /** 页面与阅读区边缘的留白（px），页面尽量铺满、避免四周一大圈灰 */
 const OUTER_PAD = 20;
+/** 书窗在可用空间基础上再收窄的安全边距（px/每侧）：杜绝居中/取整误差让右页贴边被裁 */
+const SAFETY = 6;
 /** 低于该可用宽度时，即使选择"双页"也自动退回单页（对应 epub.js spread:"auto"） */
 const MIN_SPREAD_WIDTH = 640;
 /** 多栏容器的最大列数（即最大页数上限） */
@@ -446,6 +448,14 @@ export class HtmlDocEngine implements IReaderEngine {
 				max-height: calc(var(--nyar-page-h) - 44px) !important;
 				object-fit: contain;
 			}
+			/* 超长内容不把页面顶出边界：pre 强制换行、表格限宽 */
+			.nyareader-columns pre {
+				white-space: pre-wrap;
+				word-break: break-word;
+			}
+			.nyareader-columns table {
+				max-width: 100% !important;
+			}
 			.nyareader-columns p, .nyareader-columns li, .nyareader-columns blockquote,
 			.nyareader-columns h1, .nyareader-columns h2, .nyareader-columns h3,
 			.nyareader-columns h4, .nyareader-columns figure {
@@ -467,8 +477,8 @@ export class HtmlDocEngine implements IReaderEngine {
 		// 在窗口缩放时返回陈旧值，导致书窗过大、双页右页被裁
 		const vw = this.iframe?.clientWidth || 800;
 		const vh = this.iframe?.clientHeight || 600;
-		const availW = Math.max(180, vw - OUTER_PAD * 2);
-		const availH = Math.max(180, vh - OUTER_PAD * 2);
+		const availW = Math.max(180, vw - OUTER_PAD * 2 - SAFETY * 2);
+		const availH = Math.max(180, vh - OUTER_PAD * 2 - SAFETY * 2);
 		const wDouble = Math.round((availW - this.gutter - PAGE_MARGIN_X * 2) / 2);
 		// 双页对开：可用宽足够 且 每页宽 ≥ 300px（太窄时退单页，避免两页过窄、
 		// 中间大片空白、右页被裁）
