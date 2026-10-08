@@ -1,0 +1,12 @@
+fix(reader): 双页窄窗口空白/右页被裁改用 ResizeObserver 实时重排 + 封面图限高显示 (v0.3.16)
+
+问题 1 根因：缩放窗口时依赖 iframe 内部 window.resize 事件，不可靠导致沿用
+旧尺寸 → 书窗比视口大 → 双页之间大片空白、右页被裁。
+- 改用 ResizeObserver 监听 iframe 元素（父文档实测 clientWidth/Height，始终实时）
+- 双页额外要求每页宽 >= 300px，否则自动退单页（页太窄不硬拼双页）
+
+问题 2 根因：首页封面图高于页框时被 overflow:hidden 裁掉。
+- 列内图片 max-height = 页高-44px 且 object-fit:contain，封面等比缩放进页面
+
+验证：无头浏览器实测双页 1000/800/700px 宽均 fitsX、两侧仅 7px；
+600x1200 封面缩放到 576px 完整显示；单测 99/99。

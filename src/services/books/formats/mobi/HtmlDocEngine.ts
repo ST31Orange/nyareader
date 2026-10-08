@@ -77,6 +77,8 @@ export class HtmlDocEngine implements IReaderEngine {
 	private gutter = GUTTER;
 	/** 实际生效的双页对开（窗口太窄时自动退回单页） */
 	private effectiveDouble = false;
+	/** 监听 iframe 元素尺寸变化（父文档实测，比 iframe 内部 resize 更可靠） */
+	private iframeObserver: ResizeObserver | null = null;
 
 	private resizeBound = (): void => {
 		if (this.isPaged()) this.relayoutPages(true);
@@ -137,7 +139,14 @@ export class HtmlDocEngine implements IReaderEngine {
 			const pct = this.currentPercentage();
 			this.emitter.emit("locationChanged", { location: this.currentLocation(), percentage: pct });
 		}, { passive: true });
-		win?.addEventListener?.("resize", this.resizeBound);
+		// 用 ResizeObserver 监听 iframe 元素尺寸（父文档实测的 clientWidth/Height），
+		// 窗口缩小后能立即按新尺寸重排分页，避免沿用旧尺寸导致双页被裁/右页显示不全
+		if (typeof ResizeObserver !== "undefined") {
+			this.iframeObserver = new ResizeObserver(() => {
+				if (this.isPaged()) this.relayoutPages(true);
+			});
+			this.iframeObserver.observe(this.iframe);
+		}
 	}
 
 	/** 分页模式 = 设置里未开启滚动模式。 */
@@ -235,8 +244,8 @@ export class HtmlDocEngine implements IReaderEngine {
 
 	unmount(): void {
 		this.destroyed = true;
-		const win = this.iframe.contentWindow;
-		win?.removeEventListener?.("resize", this.resizeBound);
+		this.iframeObserver?.disconnect();
+		this.iframeObserver = null;
 		this.iframe?.remove();
 	}
 
@@ -432,6 +441,11 @@ export class HtmlDocEngine implements IReaderEngine {
 				max-width: var(--nyar-page-w) !important;
 				box-sizing: border-box;
 			}
+			/* 图片不超过页高：首页封面等比缩放进页面，超出显示窗口的部分不再被裁掉 */
+			.nyareader-columns img, .nyareader-columns picture, .nyareader-columns svg, .nyareader-columns video {
+				max-height: calc(var(--nyar-page-h) - 44px) !important;
+				object-fit: contain;
+			}
 			.nyareader-columns p, .nyareader-columns li, .nyareader-columns blockquote,
 			.nyareader-columns h1, .nyareader-columns h2, .nyareader-columns h3,
 			.nyareader-columns h4, .nyareader-columns figure {
@@ -449,15 +463,17 @@ export class HtmlDocEngine implements IReaderEngine {
 	 * - 小窗口安全：页宽/页高绝不超出可用空间，且不小于下限。
 	 */
 	private computePageDims(): { w: number; h: number } {
-		const win = this.iframe.contentWindow;
-		const vw = win?.innerWidth || 800;
-		const vh = win?.innerHeight || 600;
+		// 用父文档实测的 iframe 元素尺寸（始终实时），避免 contentWindow.innerWidth
+		// 在窗口缩放时返回陈旧值，导致书窗过大、双页右页被裁
+		const vw = this.iframe?.clientWidth || 800;
+		const vh = this.iframe?.clientHeight || 600;
 		const availW = Math.max(180, vw - OUTER_PAD * 2);
 		const availH = Math.max(180, vh - OUTER_PAD * 2);
-		this.effectiveDouble = this.isDouble() && availW >= MIN_SPREAD_WIDTH;
-		const w = this.effectiveDouble
-			? Math.round((availW - this.gutter - PAGE_MARGIN_X * 2) / 2)
-			: Math.round(availW - PAGE_MARGIN_X * 2);
+		const wDouble = Math.round((availW - this.gutter - PAGE_MARGIN_X * 2) / 2);
+		// 双页对开：可用宽足够 且 每页宽 ≥ 300px（太窄时退单页，避免两页过窄、
+		// 中间大片空白、右页被裁）
+		this.effectiveDouble = this.isDouble() && availW >= MIN_SPREAD_WIDTH && wDouble >= 300;
+		const w = this.effectiveDouble ? wDouble : Math.round(availW - PAGE_MARGIN_X * 2);
 		const h = Math.round(availH);
 		return {
 			w: Math.max(120, Math.min(w, availW - PAGE_MARGIN_X * 2)),
