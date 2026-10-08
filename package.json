@@ -1,6 +1,6 @@
 {
 	"name": "nyareader",
-	"version": "0.3.6",
+	"version": "0.3.7",
 	"description": "NyaReader: multi-format ebook reader for Obsidian (EPUB/PDF/MOBI/AZW3/TXT) with select-to-translate and annotations.",
 	"main": "main.js",
 	"type": "module",

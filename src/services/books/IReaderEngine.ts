@@ -14,6 +14,8 @@ export interface ReaderEngineCapabilities {
 	zoom?: boolean;
 	/** 支持按页导航（PDF 等分页格式） */
 	pageNav?: boolean;
+	/** 支持在滚动/分页两种模式间切换（EPUB/MOBI/AZW3/TXT 等文档式格式） */
+	modeSwitch?: boolean;
 }
 
 /** 渲染引擎对外暴露的最小事件集合 */
@@ -80,6 +82,10 @@ export interface IReaderEngine {
 	setZoom?(mode: ZoomMode, value?: number): void;
 	/** 可选：读取当前缩放状态 */
 	getZoom?(): { mode: ZoomMode; scale: number; percent: number };
+	/** 可选：分页式显示时的总页数（滚动式格式在分页模式下用） */
+	getTotalPages?(): number;
+	/** 可选：在滚动/分页模式间切换并保持当前阅读位置（文档式格式实现） */
+	switchMode?(scrollMode: boolean): void;
 	destroy(): void;
 }
 

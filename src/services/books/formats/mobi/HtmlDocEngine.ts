@@ -25,7 +25,9 @@ export class HtmlDocEngine implements IReaderEngine {
 	get format(): string {
 		return this.opts.formatLabel ?? "html";
 	}
-	readonly capabilities: ReaderEngineCapabilities = { zoom: true };
+	get capabilities(): ReaderEngineCapabilities {
+		return { zoom: true, pageNav: this.isPaged(), modeSwitch: true };
+	}
 	private emitter = new SimpleReaderEmitter();
 	private container!: HTMLElement;
 	private iframe!: HTMLIFrameElement;
@@ -34,6 +36,8 @@ export class HtmlDocEngine implements IReaderEngine {
 	private destroyed = false;
 	/** 文本缩放系数（叠加在设置字号上），默认 100% */
 	private zoomScale = 1;
+	/** 分页模式：按视口一页一页翻（scrollMode=false 时启用） */
+	private snapTimer: number | null = null;
 
 	constructor(private opts: HtmlDocEngineOptions) {}
 
@@ -74,15 +78,30 @@ export class HtmlDocEngine implements IReaderEngine {
 		});
 		// iframe 内的键盘/滚轮事件不会冒泡到父文档，必须在内容窗口内处理
 		win?.addEventListener?.("wheel", (e: WheelEvent) => {
-			if (!e.ctrlKey || !this.setZoom) return;
-			e.preventDefault();
-			this.nudgeZoom(e.deltaY > 0 ? 1 / 1.1 : 1.1);
+			if (e.ctrlKey) {
+				e.preventDefault();
+				this.nudgeZoom(e.deltaY > 0 ? 1 / 1.1 : 1.1);
+				return;
+			}
+			if (this.isPaged()) {
+				// 分页模式：滚轮即翻页
+				e.preventDefault();
+				if (e.deltaY !== 0) {
+					void (e.deltaY > 0 ? this.nextPage() : this.prevPage());
+				}
+			}
 		}, { passive: false });
 		win?.addEventListener?.("keydown", (e: KeyboardEvent) => this.onContentKeydown(e));
 		win?.addEventListener?.("scroll", () => {
 			const pct = this.currentPercentage();
 			this.emitter.emit("locationChanged", { location: this.currentLocation(), percentage: pct });
+			if (this.isPaged()) this.scheduleSnap();
 		}, { passive: true });
+	}
+
+	/** 分页模式 = 设置里未开启滚动模式。 */
+	private isPaged(): boolean {
+		return this.settings.scrollMode === false;
 	}
 
 	/** iframe 内容窗口内的键盘：翻页/滚动与 Ctrl 缩放。 */
@@ -155,6 +174,8 @@ export class HtmlDocEngine implements IReaderEngine {
 
 	unmount(): void {
 		this.destroyed = true;
+		if (this.snapTimer !== null) window.clearTimeout(this.snapTimer);
+		this.snapTimer = null;
 		this.iframe?.remove();
 	}
 
@@ -181,11 +202,72 @@ export class HtmlDocEngine implements IReaderEngine {
 	}
 
 	async nextPage(): Promise<void> {
+		if (this.isPaged()) {
+			const win = this.iframe.contentWindow;
+			if (win) {
+				win.scrollBy({ top: win.innerHeight, behavior: "auto" });
+				this.snapToPage();
+				this.emitProgress();
+			}
+			return;
+		}
 		this.iframe.contentWindow?.scrollBy({ top: this.iframe.clientHeight * 0.9, behavior: "smooth" });
 	}
 
 	async prevPage(): Promise<void> {
+		if (this.isPaged()) {
+			const win = this.iframe.contentWindow;
+			if (win) {
+				win.scrollBy({ top: -win.innerHeight, behavior: "auto" });
+				this.snapToPage();
+				this.emitProgress();
+			}
+			return;
+		}
 		this.iframe.contentWindow?.scrollBy({ top: -this.iframe.clientHeight * 0.9, behavior: "smooth" });
+	}
+
+	/** 切换滚动/分页模式并保持当前阅读位置（按百分比还原，两种模式语义一致）。 */
+	switchMode(scrollMode: boolean): void {
+		const pct = this.currentPercentage();
+		this.settings = { ...this.settings, scrollMode };
+		this.reapplyStyle();
+		const win = this.iframe.contentWindow;
+		if (win) {
+			const doc = win.document;
+			const max = Math.max(1, doc.documentElement.scrollHeight - win.innerHeight);
+			win.scrollTo(0, pct * max);
+		}
+		this.emitProgress();
+	}
+
+	/** 分页总页数（按内容高度/视口高度估算）。 */
+	getTotalPages(): number {
+		const win = this.iframe?.contentWindow;
+		const doc = win?.document?.documentElement;
+		if (!win || !doc) return 0;
+		const h = doc.scrollHeight;
+		const vh = win.innerHeight;
+		if (!h || !vh) return 0;
+		return Math.max(1, Math.ceil(h / vh));
+	}
+
+	/** 滚动结束后吸附到最近的页边界（分页模式）。 */
+	private scheduleSnap(): void {
+		if (this.snapTimer !== null) window.clearTimeout(this.snapTimer);
+		this.snapTimer = window.setTimeout(() => {
+			this.snapTimer = null;
+			this.snapToPage();
+		}, 90);
+	}
+
+	private snapToPage(): void {
+		const win = this.iframe?.contentWindow;
+		if (!win) return;
+		const vh = win.innerHeight || 600;
+		const page = Math.round(win.scrollY / vh);
+		const next = page * vh;
+		if (Math.abs(win.scrollY - next) > 1) win.scrollTo(0, next);
 	}
 
 	currentLocation(): string {
@@ -227,6 +309,7 @@ export class HtmlDocEngine implements IReaderEngine {
 			img[src^="kindle:"], image[src^="kindle:"], img[src=""] { display: none; }
 			a[href^="kindle:"] { pointer-events: none; }
 			* { user-select: text; }
+			${this.isPaged() ? "html, body { scrollbar-width: none; } body::-webkit-scrollbar { display: none; }" : ""}
 		`;
 		this.doc.head.appendChild(style);
 	}

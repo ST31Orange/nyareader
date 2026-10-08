@@ -19,6 +19,7 @@ import { PromptModal } from "./components/PromptModal";
 import type { ZoomMode } from "../services/books/IReaderEngine";
 import type { BookModel } from "../types";
 import { debounce } from "../utils/debounce";
+import { displayPageFromLocation } from "../utils/paging";
 
 export { READER_VIEW_TYPE } from "./ReaderViewTypes";
 
@@ -41,6 +42,8 @@ const ZOOM_STEP = 1.15;
 export class ReaderView extends ItemView {
 	private headerInfoEl!: HTMLElement;
 	private pageIndicatorEl!: HTMLElement;
+	/** 标题栏"滚动/分页"模式切换按钮（仅文档式格式显示） */
+	private modeToggleEl: HTMLElement | null = null;
 	private zoomSelectEl!: HTMLSelectElement;
 	private zoomPercentEl!: HTMLElement;
 	private customZoomOption: HTMLOptionElement | null = null;
@@ -147,7 +150,7 @@ export class ReaderView extends ItemView {
 		this.readingArea.empty();
 		await this.controller?.openBook(file, this.readingArea);
 		this.attachEngineListeners();
-		this.syncHeaderControls();
+		this.syncPagingUi();
 		this.focusReadingArea();
 	}
 
@@ -160,7 +163,6 @@ export class ReaderView extends ItemView {
 	}
 
 	private onBookOpened(book: BookModel): void {
-		this.totalPages = book.format === "pdf" ? book.spine.length : 0;
 		this.renderToc(book);
 	}
 
@@ -190,11 +192,69 @@ export class ReaderView extends ItemView {
 		this.updatePageIndicator(engine?.currentLocation?.() ?? "1");
 	}
 
+	/**
+	 * 同步分页相关 UI（打开书 / 切换滚动分页模式后调用）：
+	 * - 模式切换按钮是否显示（仅文档式格式）
+	 * - 页码条是否显示（分页模式下显示）
+	 * - 总页数（分页模式按引擎估算，PDF 用 spine 数量）
+	 */
+	private syncPagingUi(): void {
+		const engine = this.controller?.currentEngine;
+		const caps = engine?.capabilities;
+		const book = this.controller?.currentBook;
+		this.modeToggleEl?.toggleClass("is-hidden", !caps?.modeSwitch);
+		if (caps?.modeSwitch) this.syncModeToggleIcon();
+		this.totalPages = 0;
+		if (caps?.pageNav) {
+			const total = engine?.getTotalPages?.() ?? 0;
+			if (total > 0) this.totalPages = total;
+			else if (book?.format === "pdf") this.totalPages = book.spine.length;
+		}
+		this.syncHeaderControls();
+	}
+
+	/** 模式切换按钮图标/标题：滚动模式显示"分页"入口，分页模式显示"滚动"入口。 */
+	private syncModeToggleIcon(): void {
+		const el = this.modeToggleEl;
+		if (!el) return;
+		const scrolling = this.plugin.settings.reader.scrollMode === true;
+		el.empty();
+		el.toggleClass("is-active", !scrolling);
+		el.setAttribute("title", scrolling ? "切换为分页模式" : "切换为滚动模式");
+		el.setAttribute("aria-label", scrolling ? "切换为分页模式" : "切换为滚动模式");
+		trySetIcon(el, scrolling ? "book-open" : "scroll", scrolling ? "book-open" : "list");
+	}
+
 	private updatePageIndicator(location: string): void {
 		if (!this.pageIndicatorEl) return;
-		const cur = parseInt(location, 10);
-		if (!Number.isFinite(cur)) return;
-		this.pageIndicatorEl.setText(this.totalPages > 0 ? `${cur} / ${this.totalPages} 页` : `${cur} 页`);
+		const engine = this.controller?.currentEngine;
+		const book = this.controller?.currentBook;
+		// PDF 的 location 就是页码；HTML/TXT 分页模式的 location 是 0~10000 百分比
+		const isPct = Boolean(engine?.capabilities?.pageNav) && book?.format !== "pdf";
+		const page = displayPageFromLocation(location, this.totalPages, isPct);
+		if (!Number.isFinite(page)) {
+			this.pageIndicatorEl.setText("— / —");
+			return;
+		}
+		this.pageIndicatorEl.setText(this.totalPages > 0 ? `${page} / ${this.totalPages} 页` : `${page} 页`);
+	}
+
+	/** 切换滚动/分页模式：写全局设置 + 当前书的覆盖，引擎同步保持位置。 */
+	private async toggleReadingMode(): Promise<void> {
+		const engine = this.controller?.currentEngine;
+		const book = this.controller?.currentBook;
+		if (!engine || !book || !engine.capabilities?.modeSwitch) return;
+		const next = this.plugin.settings.reader.scrollMode !== true;
+		this.plugin.settings.reader.scrollMode = next;
+		// 写入当前书的覆盖，重开这本书时保持本次选择的模式
+		const override = { ...(this.plugin.settings.bookOverrides[book.fingerprint] ?? {}) };
+		override.scrollMode = next;
+		this.plugin.settings.bookOverrides[book.fingerprint] = override;
+		await this.plugin.saveSettings();
+		// 引擎内部按百分比还原位置，语义一致，不丢进度
+		engine.switchMode?.(next);
+		this.syncPagingUi();
+		this.updatePageIndicator(engine.currentLocation?.() ?? "1");
 	}
 
 	private applyPanelWidth(): void {
@@ -241,6 +301,15 @@ export class ReaderView extends ItemView {
 
 	/** 标题栏内的"页码 · 缩放"信息条。 */
 	private buildHeaderInfo(container: HTMLElement): void {
+		// 滚动/分页模式切换（EPUB/MOBI/AZW3/TXT 显示，PDF 隐藏）
+		this.modeToggleEl = container.createEl("button", {
+			cls: "nyareader-header-btn nyareader-mode-toggle",
+			attr: { title: "切换阅读模式" },
+		});
+		this.modeToggleEl.addClass("is-hidden");
+		this.modeToggleEl.addEventListener("click", () => void this.toggleReadingMode());
+		this.syncModeToggleIcon();
+
 		this.pageIndicatorEl = container.createSpan({ cls: "nyareader-page-indicator", text: "— / —" });
 
 		const zoomOut = container.createEl("button", { cls: "nyareader-header-btn", attr: { title: "缩小", "aria-label": "缩小" } });
@@ -404,14 +473,20 @@ export class ReaderView extends ItemView {
 				evt.preventDefault();
 				void engine.nextPage();
 				break;
-			case "Home":
+			case "Home": {
 				evt.preventDefault();
-				void engine.goTo("1");
+				// PDF: 页码 "1"；HTML/TXT 分页: 百分比 "0"
+				void engine.goTo(this.controller?.currentBook?.format === "pdf" ? "1" : "0");
 				break;
-			case "End":
+			}
+			case "End": {
 				evt.preventDefault();
-				void engine.goTo(String(this.totalPages || 1));
+				// PDF: 末页页码；HTML/TXT 分页: 100%
+				void engine.goTo(
+					this.controller?.currentBook?.format === "pdf" ? String(this.totalPages || 1) : "10000"
+				);
 				break;
+			}
 			default:
 				break;
 		}
@@ -487,4 +562,17 @@ function isEditableTarget(target: EventTarget | null): boolean {
 	if (!el) return false;
 	const tag = el.tagName;
 	return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable === true;
+}
+
+/** 设置图标；Obsidian 图标名因版本而异，失败时回退到更通用的图标。 */
+function trySetIcon(el: HTMLElement, name: string, fallback: string): void {
+	try {
+		setIcon(el, name);
+	} catch {
+		try {
+			setIcon(el, fallback);
+		} catch {
+			/* 两个图标都不可用时忽略（按钮仍有 title 提示） */
+		}
+	}
 }

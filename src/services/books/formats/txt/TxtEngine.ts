@@ -35,7 +35,9 @@ const TOP_PAD = 16;
 
 export class TxtEngine implements IReaderEngine {
 	readonly format = "txt";
-	readonly capabilities: ReaderEngineCapabilities = { zoom: true };
+	get capabilities(): ReaderEngineCapabilities {
+		return { zoom: true, pageNav: this.isPaged(), modeSwitch: true };
+	}
 	private emitter = new SimpleReaderEmitter();
 	private container!: HTMLElement;
 	private scrollEl!: HTMLElement;
@@ -44,6 +46,11 @@ export class TxtEngine implements IReaderEngine {
 	private settings: ReaderSettings = { fontFamily: "system-ui", fontSize: 18, lineHeight: 1.8, margin: 24, theme: "light", layout: "single", scrollMode: true, pageWidth: 420 };
 	/** 文本缩放系数（叠加在设置字号上） */
 	private zoomScale = 1;
+
+	/** 分页模式 = 设置里未开启滚动模式 */
+	private isPaged(): boolean {
+		return this.settings.scrollMode === false;
+	}
 
 	private paragraphs: string[] = [];
 	private chapters: TxtContent["chapters"] = [];
@@ -88,9 +95,17 @@ export class TxtEngine implements IReaderEngine {
 		this.scrollEl.addEventListener(
 			"wheel",
 			(e: WheelEvent) => {
-				if (!e.ctrlKey) return;
-				e.preventDefault();
-				this.nudgeZoom(e.deltaY > 0 ? 1 / 1.1 : 1.1);
+				if (e.ctrlKey) {
+					e.preventDefault();
+					this.nudgeZoom(e.deltaY > 0 ? 1 / 1.1 : 1.1);
+					return;
+				}
+				if (this.isPaged()) {
+					e.preventDefault();
+					if (e.deltaY !== 0) {
+						void (e.deltaY > 0 ? this.nextPage() : this.prevPage());
+					}
+				}
 			},
 			{ passive: false }
 		);
@@ -122,6 +137,16 @@ export class TxtEngine implements IReaderEngine {
 	}
 
 	async goTo(location: string): Promise<void> {
+		if (this.isPaged()) {
+			// 分页模式：location 是 0~10000 百分比
+			const pct = parseInt(location, 10);
+			if (Number.isNaN(pct)) return;
+			const max = Math.max(1, (this.prefix[this.paragraphs.length] ?? 0) + TOP_PAD * 2 - this.scrollEl.clientHeight);
+			this.scrollEl.scrollTop = Math.round((pct / 10000) * max);
+			this.renderWindow();
+			this.emitProgress();
+			return;
+		}
 		const idx = parseInt(location, 10);
 		if (Number.isNaN(idx)) return;
 		const clamped = Math.max(0, Math.min(this.paragraphs.length - 1, idx));
@@ -131,15 +156,46 @@ export class TxtEngine implements IReaderEngine {
 	}
 
 	async nextPage(): Promise<void> {
+		if (this.isPaged()) {
+			this.scrollEl.scrollBy({ top: this.scrollEl.clientHeight, behavior: "auto" });
+			this.emitProgress();
+			return;
+		}
 		this.scrollEl.scrollBy({ top: this.scrollEl.clientHeight * 0.9, behavior: "smooth" });
 	}
 
 	async prevPage(): Promise<void> {
+		if (this.isPaged()) {
+			this.scrollEl.scrollBy({ top: -this.scrollEl.clientHeight, behavior: "auto" });
+			this.emitProgress();
+			return;
+		}
 		this.scrollEl.scrollBy({ top: -this.scrollEl.clientHeight * 0.9, behavior: "smooth" });
 	}
 
+	/** 切换滚动/分页模式并保持当前位置：底层都是同一个滚动容器，按百分比还原即可。 */
+	switchMode(scrollMode: boolean): void {
+		const pct = this.currentPercentage();
+		this.settings = { ...this.settings, scrollMode };
+		this.applySettings(this.settings);
+		const content = (this.prefix[this.paragraphs.length] ?? 0) + TOP_PAD * 2;
+		const max = Math.max(1, content - (this.scrollEl?.clientHeight ?? 0));
+		if (this.scrollEl) this.scrollEl.scrollTop = Math.round(pct * max);
+		this.renderWindow();
+		this.emitProgress();
+	}
+
 	currentLocation(): string {
+		if (this.isPaged()) return String(Math.round(this.currentPercentage() * 10000));
 		return String(this.indexAtOffset(Math.max(0, (this.scrollEl?.scrollTop ?? 0) - TOP_PAD)));
+	}
+
+	/** 分页总页数。 */
+	getTotalPages(): number {
+		const vh = this.scrollEl?.clientHeight;
+		const content = (this.prefix[this.paragraphs.length] ?? 0) + TOP_PAD * 2;
+		if (!vh || !content) return 0;
+		return Math.max(1, Math.ceil(content / vh));
 	}
 
 	currentPercentage(): number {
@@ -154,6 +210,7 @@ export class TxtEngine implements IReaderEngine {
 		if (!this.scrollEl) return;
 		this.scrollEl.toggleClass("nyareader-theme-dark", settings.theme === "dark");
 		this.scrollEl.toggleClass("nyareader-theme-sepia", settings.theme === "sepia");
+		this.scrollEl.toggleClass("is-paged", this.isPaged());
 		this.scrollEl.style.fontFamily = settings.fontFamily;
 		this.scrollEl.style.fontSize = `${this.effectiveFontSize()}px`;
 		this.scrollEl.style.lineHeight = `${settings.lineHeight}`;

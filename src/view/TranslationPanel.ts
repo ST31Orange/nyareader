@@ -160,7 +160,7 @@ export class TranslationPanel {
 
 		const source = this.bodyEl.createEl("textarea", {
 			cls: "nyareader-trans-source",
-			attr: { rows: "3", spellcheck: "false", title: "可修改原文后点「翻译」重新翻译" },
+			attr: { rows: "6", spellcheck: "false", title: "可修改原文后点「翻译」重新翻译" },
 		});
 		source.value = clean;
 		this.bodyEl.appendChild(source);
