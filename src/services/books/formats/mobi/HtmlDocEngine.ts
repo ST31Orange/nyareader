@@ -380,7 +380,7 @@ export class HtmlDocEngine implements IReaderEngine {
 		style.textContent = `
 			${THEME_CSS[this.settings.theme]}
 			:root { --nyar-page-w: 480px; --nyar-page-h: 680px; --nyar-gutter: ${GUTTER}px; }
-			html { font-size: ${this.effectiveFontSize()}px; }
+			html { font-size: ${this.effectiveFontSize()}px; overflow: ${paged ? "hidden" : "auto"}; }
 			body {
 				font-family: ${this.settings.fontFamily};
 				line-height: ${this.settings.lineHeight};
@@ -411,6 +411,8 @@ export class HtmlDocEngine implements IReaderEngine {
 				column-count: ${MAX_COLUMNS};
 				column-gap: var(--nyar-gutter);
 				column-fill: auto;
+				overflow-wrap: break-word;
+				word-break: break-word;
 			}
 			/* 顶层元素不能超出页宽：避免 width:100% 被多栏容器(极宽)撑爆 */
 			.nyareader-columns > * {
@@ -464,10 +466,18 @@ export class HtmlDocEngine implements IReaderEngine {
 		if (emit) this.emitProgress();
 	}
 
-	/** 测量总页数：最后一个有内容的子元素所在列号 + 1。 */
+	/**
+	 * 测量总页数：最后一个有内容的子元素所在列号 + 1。
+	 *
+	 * 必须用 getBoundingClientRect() 的「右缘」而非 offsetLeft/左缘：
+	 * CSS 多栏里一个跨多分栏的元素（例如 P&P 的正文被单个无类名 <div> 包住）
+	 * 其外接盒 left 恒为最左分片（永远在第 1 栏），offsetLeft 在嵌套定位下也不可靠，
+	 * 只有 right（最右分片）能反映真正的最后一页。
+	 */
 	private measurePages(): number {
 		const cols = this.columnsEl;
-		if (!cols) return 1;
+		const book = this.paged;
+		if (!cols || !book) return 1;
 		const children = Array.from(cols.children) as HTMLElement[];
 		let last: HTMLElement | null = null;
 		for (let i = children.length - 1; i >= 0; i--) {
@@ -478,8 +488,14 @@ export class HtmlDocEngine implements IReaderEngine {
 			}
 		}
 		if (!last) return 1;
-		const page = Math.max(1, Math.round(last.offsetLeft / (this.pageW + this.gutter)) + 1);
-		return page;
+		// 测量前先把多栏容器归位，避免旧位移/旧页宽干扰列号计算
+		const oldTransform = cols.style.transform;
+		cols.style.transform = "";
+		const bookLeft = book.getBoundingClientRect().left;
+		const right = last.getBoundingClientRect().right - bookLeft;
+		cols.style.transform = oldTransform;
+		const col = Math.max(0, Math.round(right / (this.pageW + this.gutter)));
+		return Math.max(1, col + 1);
 	}
 
 	/** 定位到某页（翻页/跳转共用）。双页模式下左页恒为奇数。 */
