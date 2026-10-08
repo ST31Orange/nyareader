@@ -49,10 +49,18 @@ const OUTER_PAD = 20;
 const SAFETY = 6;
 /** 低于该可用宽度时，即使选择"双页"也自动退回单页（对应 epub.js spread:"auto"） */
 const MIN_SPREAD_WIDTH = 640;
-/** 多栏容器的最大列数（即最大页数上限） */
-const MAX_COLUMNS = 2000;
+/**
+ * 多栏容器的最大列数（上限）。
+ *
+ * 关键约束（踩坑记录）：必须远大于"容器宽 ÷ 最小页宽"能产生的实际栏数。
+ * 若实际栏数触及 column-count 上限，Chromium 会把容器宽度摊到上限栏数上，
+ * 实际列距变成 容器宽÷栏数（旧值 1200000/2000=600px），与 pageW+gap 不符，
+ * 导致翻页位移漂移、窄窗双页显示约 1.7 页并出现三栏错位。
+ * 取 2_000_000px 容器 + 20_000 上限：pageW∈[120,900] 时实际栏数恒 < 上限。
+ */
+const MAX_COLUMNS = 20_000;
 /** 多栏容器的固定宽度：足够容纳 MAX_COLUMNS 个页 */
-const COLS_WIDTH = 1_200_000;
+const COLS_WIDTH = 2_000_000;
 
 export class HtmlDocEngine implements IReaderEngine {
 	get format(): string {
