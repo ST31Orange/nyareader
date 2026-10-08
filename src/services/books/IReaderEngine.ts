@@ -5,6 +5,17 @@
  */
 import type { BookModel, ReaderSettings } from "../../types";
 
+/** 缩放模式：适应宽度 / 适应页面 / 自定义百分比 */
+export type ZoomMode = "fit-width" | "fit-page" | "custom";
+
+/** 引擎能力声明（视图层据此决定显示哪些控件，缺省视为不支持） */
+export interface ReaderEngineCapabilities {
+	/** 支持缩放 */
+	zoom?: boolean;
+	/** 支持按页导航（PDF 等分页格式） */
+	pageNav?: boolean;
+}
+
 /** 渲染引擎对外暴露的最小事件集合 */
 export interface ReaderEngineEvents {
 	/** 位置变化（翻页/滚动/跳转后触发），用于保存进度 */
@@ -13,6 +24,8 @@ export interface ReaderEngineEvents {
 	selection: { text: string; rect?: DOMRect };
 	/** 渲染出错 */
 	error: { message: string };
+	/** 缩放变化（支持缩放的引擎发出），用于同步工具栏百分比显示 */
+	zoomChanged: { mode: ZoomMode; percent: number };
 }
 
 export type ReaderEngineEventName = keyof ReaderEngineEvents;
@@ -30,6 +43,11 @@ export interface AnnotationTarget {
 	rects?: Array<{ left: number; top: number; width: number; height: number }>;
 	/** 高亮覆盖文本 */
 	selectedText?: string;
+	/**
+	 * 生成 rects 时的 viewport 缩放比（CSS px / PDF pt）。
+	 * 可选，用于缩放后按比例还原 overlay 高亮位置；旧数据缺省时按当前缩放显示。
+	 */
+	scale?: number;
 }
 
 export interface IReaderEngine {
@@ -54,6 +72,12 @@ export interface IReaderEngine {
 	/** 获取需要加载的附加资源（pdf worker 等），由主插件统一初始化 */
 	on<E extends ReaderEngineEventName>(event: E, handler: (payload: ReaderEngineEvents[E]) => void): void;
 	off<E extends ReaderEngineEventName>(event: E, handler: (payload: ReaderEngineEvents[E]) => void): void;
+	/** 可选：引擎能力；视图层据此决定工具栏显示哪些控件 */
+	readonly capabilities?: ReaderEngineCapabilities;
+	/** 可选：设置缩放（支持缩放的引擎实现） */
+	setZoom?(mode: ZoomMode, value?: number): void;
+	/** 可选：读取当前缩放状态 */
+	getZoom?(): { mode: ZoomMode; scale: number; percent: number };
 	destroy(): void;
 }
 

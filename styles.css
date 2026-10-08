@@ -7,26 +7,60 @@
 	background: var(--background-primary);
 }
 
-/* 工具栏 */
-.nyareader-toolbar {
+/* 紧凑常驻工具栏（翻页 + 缩放）：非悬浮，尽量少占高度 */
+.nyareader-topbar {
 	display: flex;
 	gap: 6px;
 	align-items: center;
-	padding: 6px 12px;
+	padding: 4px 10px;
+	min-height: 32px;
 	border-bottom: 1px solid var(--background-modifier-border);
-	flex-wrap: wrap;
+	background: var(--background-primary);
 }
-.nyareader-toolbar-btn {
-	padding: 3px 10px;
+.nyareader-topbar.is-hidden {
+	display: none;
+}
+.nyareader-topbar-spacer {
+	flex: 1;
+}
+.nyareader-topbar .nyareader-icon-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 26px;
+	padding: 0;
+	border: 1px solid transparent;
 	border-radius: 6px;
-	border: 1px solid var(--background-modifier-border);
-	background: var(--background-secondary);
-	color: var(--text-normal);
+	background: transparent;
+	color: var(--text-muted);
 	cursor: pointer;
-	font-size: 13px;
 }
-.nyareader-toolbar-btn:hover {
+.nyareader-topbar .nyareader-icon-btn:hover {
 	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+.nyareader-topbar .nyareader-icon-btn svg {
+	width: 16px;
+	height: 16px;
+}
+.nyareader-page-indicator,
+.nyareader-zoom-percent {
+	font-size: 12px;
+	color: var(--text-muted);
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+}
+.nyareader-page-indicator.is-hidden {
+	display: none;
+}
+.nyareader-zoom-select {
+	background: var(--background-primary);
+	color: var(--text-normal);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	padding: 2px 6px;
+	font-size: 12px;
 }
 
 /* 内容区：左目录 / 中央阅读 / 右侧翻译 */
@@ -56,22 +90,45 @@
 	background: var(--background-primary);
 }
 .nyareader-trans-host {
+	--nyareader-trans-width: 320px;
 	width: 0;
 	flex-shrink: 0;
+	overflow: hidden;
 	transition: width 0.18s ease;
 }
-.nyareader-trans-host:has(.nyareader-trans-panel[style*="display: block"]) {
-	width: 320px;
+/* 用 class 控制显隐：旧实现匹配内联 style 字符串，永远命不中，导致面板不显示 */
+.nyareader-trans-host.is-open {
+	width: var(--nyareader-trans-width, 320px);
 }
 
 /* 翻译面板 */
 .nyareader-trans-panel {
-	width: 320px;
+	position: relative;
+	width: 100%;
 	height: 100%;
 	border-left: 1px solid var(--background-modifier-border);
 	background: var(--background-secondary);
 	display: flex;
 	flex-direction: column;
+}
+.nyareader-trans-panel.is-hidden {
+	display: none;
+}
+/* 左边缘拖拽调宽手柄 */
+.nyareader-trans-resizer {
+	position: absolute;
+	left: 0;
+	top: 0;
+	bottom: 0;
+	width: 6px;
+	cursor: col-resize;
+	z-index: 2;
+	touch-action: none;
+}
+.nyareader-trans-resizer:hover,
+.nyareader-trans-resizer.is-dragging {
+	background: var(--interactive-accent);
+	opacity: 0.5;
 }
 .nyareader-trans-header {
 	display: flex;
@@ -147,58 +204,85 @@
 	white-space: pre-line;
 }
 
-/* ===== PDF 阅读区 ===== */
-.nyareader-pdf-canvas-host {
+/* ===== PDF 阅读区：连续滚动 + 多页懒渲染 ===== */
+/* 引擎自建滚动内容，容器本身不再加内边距（padding 移到 .nyareader-pdf-pages） */
+.nyareader-reading.nyareader-pdf-root {
 	position: relative;
-	margin: 0 auto;
-	box-shadow: 0 2px 14px rgba(0, 0, 0, 0.12);
-	background: #fff;
+	overflow: auto;
+	padding: 0;
+	outline: none;
+	/* 始终为滚动条预留空间，使"适应宽度"在出现滚动条前后一致 */
+	scrollbar-gutter: stable;
+	background: var(--background-secondary);
 }
-.nyareader-pdf-canvas-host canvas {
+.nyareader-reading.nyareader-pdf-root.is-theme-dark {
+	background: #17181a;
+}
+.nyareader-reading.nyareader-pdf-root.is-theme-sepia {
+	background: #efe6d2;
+}
+.nyareader-pdf-pages {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: 20px 28px 32px;
+	min-height: 100%;
+}
+.nyareader-pdf-slot {
+	position: relative;
+	flex: 0 0 auto;
+	background: #fff;
+	box-shadow: 0 1px 10px rgba(0, 0, 0, 0.18);
+}
+.nyareader-pdf-slot canvas {
 	display: block;
+}
+/*
+ * 文本层必须遵循 pdf.js 4.x 规范：
+ * - --scale-factor 由引擎按 viewport.scale 设置，span 字号依赖它，缺失则划选错位；
+ * - transform-origin 需为左上角，否则 span 的 scaleX/rotate 会从中心变换。
+ */
+.nyareader-pdf-textlayer {
+	position: absolute;
+	inset: 0;
+	overflow: hidden;
+	line-height: 1;
+	text-align: initial;
+	transform-origin: 0 0;
+	-webkit-text-size-adjust: none;
+	text-size-adjust: none;
+	z-index: 2;
+}
+.nyareader-pdf-textlayer span,
+.nyareader-pdf-textlayer br {
+	position: absolute;
+	white-space: pre;
+	cursor: text;
+	color: transparent;
+	transform-origin: 0% 0%;
+}
+.nyareader-pdf-textlayer ::selection {
+	background: rgba(90, 130, 255, 0.35);
+}
+.nyareader-pdf-textlayer .endOfContent {
+	display: block;
+	position: absolute;
+	inset: 100% 0 0;
+	z-index: 0;
+	cursor: default;
+	user-select: none;
 }
 .nyareader-pdf-overlay {
 	position: absolute;
-	top: 0;
-	left: 0;
-	width: 100%;
-	height: 100%;
+	inset: 0;
 	pointer-events: none;
 	overflow: hidden;
+	z-index: 3;
 }
 .nyareader-pdf-annotation-marker {
 	position: absolute;
 	background: rgba(255, 235, 59, 0.35);
 	border-radius: 2px;
-}
-.nyareader-pdf-textlayer {
-	position: absolute;
-	top: 0;
-	left: 0;
-	width: 100%;
-	height: 100%;
-	line-height: 1;
-	opacity: 0.25;
-	overflow: hidden;
-}
-.nyareader-pdf-textlayer span {
-	position: absolute;
-	white-space: pre;
-	cursor: text;
-	color: transparent;
-}
-.nyareader-pdf-page-label {
-	position: sticky;
-	bottom: 0;
-	text-align: center;
-	padding: 6px;
-	color: var(--text-muted);
-	font-size: 12px;
-	background: var(--background-primary);
-	border-top: 1px solid var(--background-modifier-border);
-}
-.nyareader-reading.pdf-loading {
-	opacity: 0.6;
 }
 
 /* ===== 目录面板 ===== */
@@ -438,8 +522,8 @@
 	cursor: pointer;
 }
 
-/* ===== 阅读布局 v0.2.0：标题栏 + 折叠工具栏 ===== */
-/* Obsidian 标题栏上的按钮（addAction 返回）激活态：翻译按钮变色 */
+/* ===== 阅读布局 v0.3.0：标题栏 + 紧凑工具栏 ===== */
+/* Obsidian 标题栏按钮（addAction 返回）激活态：翻译按钮变色 */
 .nyareader-titlebar-action.is-active svg {
 	color: var(--text-accent);
 	stroke: var(--text-accent);
@@ -448,15 +532,8 @@
 	color: var(--text-accent);
 }
 
-/* 细高可折叠工具栏：默认收起（隐藏），展开时显示 */
-.nyareader-toolbar.is-collapsed {
-	display: none;
-}
-.nyareader-toolbar {
-	display: flex;
-	gap: 6px;
-	align-items: center;
-	padding: 3px 12px;
-	border-bottom: 1px solid var(--background-modifier-border);
-	flex-wrap: wrap;
+/* 阅读区可获取焦点（键盘翻页/滚动），不显示默认轮廓 */
+.nyareader-reading:focus,
+.nyareader-reading:focus-visible {
+	outline: none;
 }

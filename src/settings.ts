@@ -12,11 +12,19 @@ export interface TranslationSettings {
 	targetLanguage: string;
 }
 
+/** 阅读器 UI 级设置（与翻译服务配置无关）。 */
+export interface ReaderUiSettings {
+	/** 右侧翻译面板宽度（px），可拖拽调整 */
+	translationPanelWidth: number;
+}
+
 export interface NyaReaderSettings {
 	/** 每本书的版式覆盖：fingerprint -> ReaderSettings */
 	bookOverrides: Record<string, ReaderSettings>;
 	reader: ReaderSettings;
 	translation: TranslationSettings;
+	/** 阅读器 UI 设置（翻译面板宽度等） */
+	ui: ReaderUiSettings;
 	/** 首次运行时是否已提示安装翻译服务（NyaLingo） */
 	translationPromptShown: boolean;
 	/** 批注侧车文件名后缀 */
@@ -26,6 +34,10 @@ export interface NyaReaderSettings {
 export const DEFAULT_TRANSLATION_SETTINGS: TranslationSettings = {
 	sourceLanguage: "auto",
 	targetLanguage: "zh-Hans",
+};
+
+export const DEFAULT_UI_SETTINGS: ReaderUiSettings = {
+	translationPanelWidth: 320,
 };
 
 export const DEFAULT_SETTINGS: NyaReaderSettings = {
@@ -41,6 +53,7 @@ export const DEFAULT_SETTINGS: NyaReaderSettings = {
 		pageWidth: 420,
 	},
 	translation: { ...DEFAULT_TRANSLATION_SETTINGS },
+	ui: { ...DEFAULT_UI_SETTINGS },
 	translationPromptShown: false,
 	annotationSidecarSuffix: ".annotations",
 };
@@ -50,6 +63,7 @@ export function normalizeSettings(raw: unknown): NyaReaderSettings {
 	const v = (raw ?? {}) as Partial<NyaReaderSettings>;
 	const t = (v.translation ?? {}) as Partial<TranslationSettings>;
 	const r = (v.reader ?? {}) as Partial<ReaderSettings>;
+	const u = (v.ui ?? {}) as Partial<ReaderUiSettings>;
 	return {
 		bookOverrides: v.bookOverrides && typeof v.bookOverrides === "object" ? (v.bookOverrides as Record<string, ReaderSettings>) : {},
 		reader: {
@@ -65,6 +79,9 @@ export function normalizeSettings(raw: unknown): NyaReaderSettings {
 		translation: {
 			sourceLanguage: strOr(t.sourceLanguage, DEFAULT_TRANSLATION_SETTINGS.sourceLanguage),
 			targetLanguage: strOr(t.targetLanguage, DEFAULT_TRANSLATION_SETTINGS.targetLanguage),
+		},
+		ui: {
+			translationPanelWidth: clamp(Number(u.translationPanelWidth), 240, 760, DEFAULT_UI_SETTINGS.translationPanelWidth),
 		},
 		translationPromptShown: v.translationPromptShown === true,
 		annotationSidecarSuffix: strOr(v.annotationSidecarSuffix, DEFAULT_SETTINGS.annotationSidecarSuffix),

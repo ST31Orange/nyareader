@@ -10,7 +10,7 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 
 interface PdfOutlineNode {
 	title: string;
-	dest?: unknown;
+	dest?: string | unknown[] | null;
 	items?: PdfOutlineNode[];
 }
 
@@ -69,18 +69,28 @@ async function buildToc(outline: PdfOutlineNode[] | null, doc: PDFDocumentProxy)
 	return walk(outline, 0);
 }
 
-/** 从 outline 目标解析页码；失败回退为 1。 */
+/**
+ * 从 outline 目标解析页码；失败回退为 1。
+ *
+ * pdf.js 的 outline 节点 dest 有两种形态：
+ * - 字符串：命名目标，需要 getDestination(id) 解析；
+ * - 数组：内联目标（explicit dest），首元素可能是对象引用或页码索引。
+ * 旧实现只处理字符串且把数组强转成 string，导致大量目录项回退到第 1 页。
+ */
 async function resolvePageNumber(node: PdfOutlineNode, doc: PDFDocumentProxy): Promise<number> {
 	try {
-		if (node.dest) {
-			const dest = await doc.getDestination(node.dest as string);
-			if (Array.isArray(dest) && dest[0] !== undefined) {
-				const ref = dest[0] as { num?: number; gen?: number; toString(): string };
-				// ref 是 PDF 对象引用，转成 pageIndex 需要 getPageIndex
-				const pageIndex = await doc.getPageIndex({ num: ref.num ?? 0, gen: ref.gen ?? 0 } as never).catch(() => -1);
-				if (pageIndex >= 0) return pageIndex + 1;
-			}
+		let dest: unknown = node.dest ?? null;
+		if (typeof dest === "string") dest = await doc.getDestination(dest);
+		if (!Array.isArray(dest) || dest.length === 0) return 1;
+		const target = dest[0];
+		// 对象引用 { num, gen } -> 页索引
+		if (target && typeof target === "object" && "num" in (target as Record<string, unknown>)) {
+			const ref = target as { num: number; gen: number };
+			const pageIndex = await doc.getPageIndex(ref).catch(() => -1);
+			if (pageIndex >= 0) return pageIndex + 1;
 		}
+		// 直接是 0-based 页索引
+		if (typeof target === "number" && Number.isFinite(target)) return Math.max(1, Math.floor(target) + 1);
 	} catch {
 		/* 忽略单个节点失败 */
 	}
