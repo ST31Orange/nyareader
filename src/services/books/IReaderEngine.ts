@@ -86,6 +86,8 @@ export interface IReaderEngine {
 	getTotalPages?(): number;
 	/** 可选：在滚动/分页模式间切换并保持当前阅读位置（文档式格式实现） */
 	switchMode?(scrollMode: boolean): void;
+	/** 可选：按方向键逐行滚动（滚动模式下 ↑/↓ 用；方向 1=向下，-1=向上） */
+	scrollStep?(direction: 1 | -1): void;
 	destroy(): void;
 }
 

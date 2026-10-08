@@ -435,17 +435,24 @@ export class ReaderView extends ItemView {
 			}
 			return;
 		}
-		// 滚动式引擎（EPUB/MOBI/AZW3/TXT）：方向键/翻页键=滚动翻页，Home/End=首/末
+		// 滚动式引擎（EPUB/MOBI/AZW3/TXT）：↑/↓=逐行滚动（原生手感），
+		// ←/→=翻页、PgUp/PgDn=翻页，Home/End=首/末
 		if (!engine.capabilities?.pageNav) {
 			switch (evt.key) {
-				case "ArrowLeft":
 				case "ArrowUp":
+					evt.preventDefault();
+					engine.scrollStep?.(-1);
+					break;
+				case "ArrowDown":
+					evt.preventDefault();
+					engine.scrollStep?.(1);
+					break;
+				case "ArrowLeft":
 				case "PageUp":
 					evt.preventDefault();
 					void engine.prevPage();
 					break;
 				case "ArrowRight":
-				case "ArrowDown":
 				case "PageDown":
 					evt.preventDefault();
 					void engine.nextPage();

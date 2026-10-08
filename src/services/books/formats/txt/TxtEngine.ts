@@ -185,6 +185,13 @@ export class TxtEngine implements IReaderEngine {
 		this.emitProgress();
 	}
 
+	/** 滚动模式：↑/↓ 方向键按行滚动（保持原生文档手感，不整页翻）。 */
+	scrollStep(direction: 1 | -1): void {
+		if (!this.scrollEl) return;
+		const linePx = Math.max(1, this.effectiveFontSize() * this.settings.lineHeight);
+		this.scrollEl.scrollBy({ top: direction * linePx, behavior: "auto" });
+	}
+
 	currentLocation(): string {
 		if (this.isPaged()) return String(Math.round(this.currentPercentage() * 10000));
 		return String(this.indexAtOffset(Math.max(0, (this.scrollEl?.scrollTop ?? 0) - TOP_PAD)));

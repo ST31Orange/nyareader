@@ -123,17 +123,25 @@ export class HtmlDocEngine implements IReaderEngine {
 		const win = this.iframe.contentWindow;
 		if (!win) return;
 		switch (e.key) {
-			case "ArrowLeft":
 			case "ArrowUp":
+				e.preventDefault();
+				if (this.isPaged()) void this.prevPage();
+				else this.scrollStep(-1);
+				break;
+			case "ArrowDown":
+				e.preventDefault();
+				if (this.isPaged()) void this.nextPage();
+				else this.scrollStep(1);
+				break;
+			case "ArrowLeft":
 			case "PageUp":
 				e.preventDefault();
-				this.prevPage();
+				void this.prevPage();
 				break;
 			case "ArrowRight":
-			case "ArrowDown":
 			case "PageDown":
 				e.preventDefault();
-				this.nextPage();
+				void this.nextPage();
 				break;
 			case "Home":
 				e.preventDefault();
@@ -239,6 +247,14 @@ export class HtmlDocEngine implements IReaderEngine {
 			win.scrollTo(0, pct * max);
 		}
 		this.emitProgress();
+	}
+
+	/** 滚动模式：↑/↓ 方向键按行滚动（保持原生文档手感，不整页翻）。 */
+	scrollStep(direction: 1 | -1): void {
+		const win = this.iframe.contentWindow;
+		if (!win) return;
+		const linePx = Math.max(1, this.effectiveFontSize() * this.settings.lineHeight);
+		win.scrollBy({ top: direction * linePx, behavior: "auto" });
 	}
 
 	/** 分页总页数（按内容高度/视口高度估算）。 */
