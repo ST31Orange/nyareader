@@ -243,32 +243,32 @@ export class BookshelfView extends ItemView {
 
 		const info = card.createDiv({ cls: "nyareader-shelf-card-info" });
 		info.createDiv({ cls: "nyareader-shelf-card-title", text: entry?.title ?? base });
-		if (mode !== "compact") {
-			info.createDiv({ cls: "nyareader-shelf-card-author", text: entry?.author ? `作者：${entry.author}` : "未知作者" });
-		}
 
-		// 进度条
 		const progress = entry?.progress?.percentage ?? 0;
-		const barWrap = info.createDiv({ cls: "nyareader-shelf-progress" });
+
 		if (mode === "compact") {
-			// 紧凑模式：格式标识放在进度条右下角
-			barWrap.addClass("is-with-ext");
-			const bar = barWrap.createDiv({ cls: "nyareader-shelf-progress-bar" });
-			bar.style.width = `${Math.round(progress * 100)}%`;
-			barWrap.createSpan({ cls: "nyareader-shelf-cover-ext is-mini", text: ext.toUpperCase() });
+			// 紧凑模式：作者 + 进度条 + 百分比 + 格式标识放同一行，进度不再单独占一行
+			const metaRow = info.createDiv({ cls: "nyareader-shelf-compact-meta" });
+			metaRow.createSpan({ cls: "nyareader-shelf-card-author", text: entry?.author ?? "未知作者" });
+			const bar = metaRow.createDiv({ cls: "nyareader-shelf-progress" });
+			const barInner = bar.createDiv({ cls: "nyareader-shelf-progress-bar" });
+			barInner.style.width = `${Math.round(progress * 100)}%`;
+			metaRow.createSpan({ cls: "nyareader-shelf-compact-pct", text: `${Math.round(progress * 100)}%` });
+			metaRow.createSpan({ cls: "nyareader-shelf-cover-ext is-mini", text: ext.toUpperCase() });
 		} else {
+			info.createDiv({ cls: "nyareader-shelf-card-author", text: entry?.author ? `作者：${entry.author}` : "未知作者" });
+			// 进度条
+			const barWrap = info.createDiv({ cls: "nyareader-shelf-progress" });
 			const bar = barWrap.createDiv({ cls: "nyareader-shelf-progress-bar" });
 			bar.style.width = `${Math.round(progress * 100)}%`;
-		}
-		const meta = info.createDiv({ cls: "nyareader-shelf-card-meta" });
-		if (mode !== "compact") {
-			// 电子书格式放到最下面一行（完整显示模式）
+			// 最底部一行：格式标识 + 百分比 + 日期（完整显示模式）
+			const meta = info.createDiv({ cls: "nyareader-shelf-card-meta" });
 			meta.createSpan({ cls: "nyareader-shelf-cover-ext is-mini", text: ext.toUpperCase() });
+			meta.createSpan({
+				cls: "nyareader-shelf-card-meta-text",
+				text: `${Math.round(progress * 100)}%${entry?.lastOpenedAt ? ` · ${this.fmtTime(entry.lastOpenedAt)}` : ""}`,
+			});
 		}
-		meta.createSpan({
-			cls: "nyareader-shelf-card-meta-text",
-			text: `${Math.round(progress * 100)}%${mode !== "compact" && entry?.lastOpenedAt ? ` · ${this.fmtTime(entry.lastOpenedAt)}` : ""}`,
-		});
 
 		// 删除按钮
 		const del = card.createEl("button", { text: "✕", cls: "nyareader-shelf-card-del" });

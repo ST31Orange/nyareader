@@ -704,18 +704,37 @@
 	min-height: 0;
 	flex: 1;
 }
-.nyareader-shelf-card.is-compact .nyareader-shelf-progress.is-with-ext {
+/* 紧凑：作者 + 进度条 + 百分比 + 格式同一行，进度不再单独占一行 */
+.nyareader-shelf-card.is-compact .nyareader-shelf-compact-meta {
 	display: flex;
 	align-items: center;
-	gap: 6px;
-	height: auto;
-	overflow: visible;
-	background: transparent;
-	margin-top: 4px;
+	gap: 8px;
+	margin-top: 3px;
+	min-width: 0;
 }
-.nyareader-shelf-card.is-compact .nyareader-shelf-progress.is-with-ext .nyareader-shelf-progress-bar {
+.nyareader-shelf-card.is-compact .nyareader-shelf-card-author {
 	flex: 1;
+	min-width: 0;
+	margin-top: 0;
+}
+.nyareader-shelf-card.is-compact .nyareader-shelf-progress {
+	flex: 0 0 56px;
 	height: 4px;
+	margin-top: 0;
+	background: var(--background-modifier-border);
+	border-radius: 2px;
+	overflow: hidden;
+}
+.nyareader-shelf-card.is-compact .nyareader-shelf-progress .nyareader-shelf-progress-bar {
+	height: 100%;
+	background: var(--text-accent);
+	border-radius: 2px;
+}
+.nyareader-shelf-card.is-compact .nyareader-shelf-compact-pct {
+	font-size: 12px;
+	color: var(--text-muted);
+	flex: none;
+	font-variant-numeric: tabular-nums;
 }
 /* 列表：一行书名 */
 .nyareader-shelf-card.is-list {
