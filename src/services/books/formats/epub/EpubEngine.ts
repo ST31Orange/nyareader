@@ -8,6 +8,7 @@ import Epub from "epubjs";
 import type { AnnotationTarget, IReaderEngine, ReaderEngineEvents } from "../../IReaderEngine";
 import { SimpleReaderEmitter } from "../../IReaderEngine";
 import type { BookModel, ReaderSettings } from "../../../../types";
+import { normalizeSelectionText } from "../../../../utils/text";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyBook = any;
@@ -35,6 +36,7 @@ export class EpubEngine implements IReaderEngine {
 	private resizeObserver: ResizeObserver | null = null;
 	private selectionHandlerAttached = false;
 	private destroyed = false;
+	private loadingEl: HTMLElement | null = null;
 
 	constructor(private opts: EpubEngineOptions) {}
 
@@ -47,11 +49,10 @@ export class EpubEngine implements IReaderEngine {
 
 	async mount(container: HTMLElement): Promise<void> {
 		this.container = container;
+		this.showLoading("正在打开 EPUB…");
 		try {
 			this.epub = Epub(this.opts.buffer);
 			await this.epub.ready;
-			// 生成位置索引（供百分比进度）
-			await this.epub.locations.generate(1600).catch(() => undefined);
 
 			this.rendition = this.epub.renderTo(container, {
 				width: Math.max(container.clientWidth, 300),
@@ -72,8 +73,11 @@ export class EpubEngine implements IReaderEngine {
 			});
 
 			await this.rendition.display();
+			this.hideLoading();
 			this.applySettings(this.settings);
 			this.attachSelectionHandler();
+			// 进度索引在后台生成：不阻塞首屏，生成完再补发一次进度
+			void this.buildLocations();
 
 			// 容器尺寸变化时重排
 			if (typeof ResizeObserver !== "undefined") {
@@ -85,7 +89,35 @@ export class EpubEngine implements IReaderEngine {
 				this.resizeObserver.observe(container);
 			}
 		} catch (e) {
+			this.hideLoading();
 			this.emitter.emit("error", { message: `EPUB 加载失败：${e instanceof Error ? e.message : String(e)}` });
+		}
+	}
+
+	/** 首屏前加载提示（EPUB 大书解析需要一两秒，避免误以为空白）。 */
+	private showLoading(text: string): void {
+		this.hideLoading();
+		this.loadingEl = this.container.createDiv({ cls: "nyareader-engine-loading", text });
+	}
+
+	private hideLoading(): void {
+		this.loadingEl?.remove();
+		this.loadingEl = null;
+	}
+
+	private async buildLocations(): Promise<void> {
+		if (!this.epub || this.destroyed) return;
+		try {
+			await this.epub.locations.generate(1200);
+			if (this.destroyed || !this.rendition) return;
+			const loc = this.rendition.currentLocation();
+			const cfi = loc?.start?.cfi;
+			if (cfi) {
+				const pct = this.epub.locations.percentageFromCfi(cfi);
+				this.emitter.emit("locationChanged", { location: cfi, percentage: pct || 0 });
+			}
+		} catch {
+			/* 进度索引失败不影响阅读 */
 		}
 	}
 
@@ -99,6 +131,7 @@ export class EpubEngine implements IReaderEngine {
 				/* ignore */
 			}
 		}
+		this.hideLoading();
 		this.rendition = null;
 		this.epub = null;
 	}
@@ -157,7 +190,7 @@ export class EpubEngine implements IReaderEngine {
 		if (!win) return null;
 		const sel = win.getSelection();
 		if (!sel || sel.isCollapsed) return null;
-		const text = sel.toString().trim();
+		const text = normalizeSelectionText(sel.toString());
 		if (!text) return null;
 
 		// 计算页内矩形（iframe 内坐标）

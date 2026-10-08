@@ -77,6 +77,11 @@ export class ReaderView extends ItemView {
 		return "book-open";
 	}
 
+	/** 当前阅读窗口是否已经在看书（主插件据此决定"再打开一本"时是否新建窗口）。 */
+	hasBook(): boolean {
+		return !!this.currentFile && !!this.controller?.currentBook;
+	}
+
 	async onOpen(): Promise<void> {
 		const container = this.containerEl.children[1] as HTMLElement;
 		container.empty();

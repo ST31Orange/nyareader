@@ -117,9 +117,27 @@ describe("KF8/AZW3 多文档合并", () => {
 		expect(merged).toContain("p{color:red}");
 	});
 
-	it("单文档原样返回", () => {
+	it("KF8 骨架结构：正文在骨架块之间，空 body 丢弃", () => {
+		// 真实 AZW3（Standard Ebooks）：每个 <html> 块 body 为空，章节内容在块之间
+		const merged = mergeHtmlDocuments(
+			`<?xml version="1.0"?><html><head><title>Titlepage</title></head><body class="se" aid="0"></body></html>` +
+				`<section id="titlepage" aid="1"><h1>Pride and Prejudice</h1></section>` +
+				`<?xml version="1.0"?><html><head><title>Chapter 1</title></head><body class="se" aid="0"></body></html>` +
+				`<section id="chapter-1" aid="2"><p>It is a truth universally acknowledged</p></section>`
+		);
+		expect((merged.match(/<html\b/gi) || []).length).toBe(1);
+		expect(merged).toContain("<section id=\"titlepage\"");
+		expect(merged).toContain("truth universally acknowledged");
+		// 空骨架 body 不应残留
+		expect(merged).not.toContain('class="se" aid="0"');
+	});
+
+	it("单文档（MOBI6）正文在 body 内被保留并重新包装", () => {
 		const html = `<html><body><p>x</p></body></html>`;
-		expect(mergeHtmlDocuments(html)).toBe(html);
+		const merged = mergeHtmlDocuments(html);
+		expect(merged).toContain("<p>x</p>");
+		expect((merged.match(/<html\b/gi) || []).length).toBe(1);
+		expect(merged.startsWith("<!DOCTYPE html><html>")).toBe(true); // 被规范包装为单文档
 	});
 });
 

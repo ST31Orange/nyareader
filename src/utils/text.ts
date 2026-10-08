@@ -7,6 +7,20 @@ export interface Chunk {
 }
 
 /**
+ * 归一化划词文本：浏览器从 PDF 文本层/分页 iframe 里拖选文本时，
+ * 往往把每一行的换行、两个段落之间的空行一起带出来（"划出多余的分段符"）。
+ * 规则：所有换行折叠为空格、压缩连续空白 —— 保证交给翻译引擎的是干净的一句话/段。
+ */
+export function normalizeSelectionText(text: string): string {
+	return text
+		.replace(/\r\n/g, "\n")
+		.replace(/\u00a0/g, " ")
+		.replace(/\n+/g, " ")
+		.replace(/[ \t]+/g, " ")
+		.trim();
+}
+
+/**
  * 按段落边界切块，保留块间换行以便翻译后还原排版。
  * 规则：尽量在换行处切；单段超长时硬切。
  */

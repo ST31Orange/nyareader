@@ -163,15 +163,48 @@
 	gap: 10px;
 }
 .nyareader-trans-source {
+	width: 100%;
+	box-sizing: border-box;
+	resize: vertical;
+	min-height: 64px;
 	color: var(--text-normal);
 	font-size: 13px;
-	white-space: pre-wrap;
+	line-height: 1.6;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	padding: 6px 8px;
+	font-family: inherit;
+}
+.nyareader-trans-source:focus {
+	border-color: var(--interactive-accent);
+	outline: none;
+}
+.nyareader-trans-actions {
+	display: flex;
+	justify-content: flex-end;
+}
+.nyareader-trans-retranslate {
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-size: 12px;
+	border-radius: 6px;
+	padding: 3px 12px;
+	cursor: pointer;
+}
+.nyareader-trans-retranslate:hover {
+	border-color: var(--interactive-accent);
+	color: var(--text-accent);
 }
 .nyareader-trans-target {
 	color: var(--text-accent);
 	font-size: 14px;
 	line-height: 1.7;
 	white-space: pre-wrap;
+}
+.nyareader-trans-target.is-pending {
+	color: var(--text-muted);
 }
 .nyareader-trans-status {
 	padding: 4px 12px;
@@ -328,6 +361,8 @@
 	outline: none;
 	background: var(--background-primary);
 	scrollbar-gutter: stable;
+	-webkit-user-select: text;
+	user-select: text;
 }
 .nyareader-txt-scroll.nyareader-theme-dark {
 	background: #1e1e1e;
@@ -356,6 +391,23 @@
 	padding: 0 0 0.6em 0;
 	text-indent: 2em;
 	word-break: break-word;
+	cursor: text;
+	-webkit-user-select: text;
+	user-select: text;
+}
+
+/* 引擎加载中提示（EPUB 大书首屏前显示，避免被误认为白屏） */
+.nyareader-engine-loading {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-muted);
+	font-size: 14px;
+	z-index: 5;
+	pointer-events: none;
+	background: var(--background-primary);
 }
 
 /* ===== 目录面板 ===== */
@@ -706,4 +758,31 @@
 	text-align: center;
 	color: var(--text-muted);
 	font-size: 13px;
+}
+
+/* ===== 通用文本输入弹窗（替换 window.prompt） ===== */
+.nyareader-prompt-modal {
+	min-width: 320px;
+}
+.nyareader-prompt-modal .nyareader-prompt-input {
+	width: 100%;
+	box-sizing: border-box;
+	font-family: inherit;
+	font-size: 14px;
+	padding: 6px 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	resize: vertical;
+}
+.nyareader-prompt-modal .nyareader-prompt-input:focus {
+	border-color: var(--interactive-accent);
+	outline: none;
+}
+.nyareader-prompt-modal .nyareader-prompt-buttons {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 14px;
 }

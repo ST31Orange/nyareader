@@ -4,6 +4,7 @@
  */
 import { App, Modal, Notice, setIcon } from "obsidian";
 import type { Annotation, AnnotationKind } from "../services/annotations/AnnotationModel";
+import { PromptModal } from "./components/PromptModal";
 
 export interface AnnotationListModalOptions {
 	getAnnotations: () => Promise<Annotation[]>;
@@ -80,16 +81,23 @@ export class AnnotationListModal extends Modal {
 		btn.addEventListener("click", onClick);
 	}
 
-	private async editNote(a: Annotation): Promise<void> {
-		const next = window.prompt("笔记内容：", a.note ?? "");
-		if (next == null) return;
-		try {
-			await this.opts.onEditNote({ ...a, note: next.trim() || undefined });
-			new Notice("NyaReader：笔记已更新。", 2000);
-			await this.refresh();
-		} catch (e) {
-			new Notice(`NyaReader：更新失败：${e instanceof Error ? e.message : String(e)}`, 5000);
-		}
+	private editNote(a: Annotation): void {
+		new PromptModal(this.app, {
+			title: "编辑笔记",
+			multiline: true,
+			initialValue: a.note ?? "",
+			placeholder: "笔记内容",
+			submitText: "保存",
+			onSubmit: async (note) => {
+				try {
+					await this.opts.onEditNote({ ...a, note });
+					new Notice("NyaReader：笔记已更新。", 2000);
+					await this.refresh();
+				} catch (e) {
+					new Notice(`NyaReader：更新失败：${e instanceof Error ? e.message : String(e)}`, 5000);
+				}
+			},
+		}).open();
 	}
 
 	private async delete(a: Annotation): Promise<void> {

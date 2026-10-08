@@ -161,6 +161,18 @@ export default class NyaReaderPlugin extends Plugin {
 			new Notice("NyaReader：不支持该格式。");
 			return;
 		}
+		// 若已有阅读窗口在看书：新建一个阅读窗口打开，而不是替换原窗口
+		const existing = this.app.workspace.getLeavesOfType(READER_VIEW_TYPE);
+		const readerWithBook = existing.find((l) => (l.view as ReaderView | undefined)?.hasBook());
+		if (readerWithBook) {
+			const leaf = this.app.workspace.getLeaf("tab");
+			await leaf.setViewState({ type: READER_VIEW_TYPE, active: true });
+			this.app.workspace.revealLeaf(leaf);
+			const view = leaf.view as ReaderView;
+			if (view) await view.openBook(file);
+			return;
+		}
+		// 没有阅读窗口或窗口空着：复用/新建一个
 		await this.activateReader();
 		const view = this.app.workspace.getLeavesOfType(READER_VIEW_TYPE)[0]?.view as ReaderView | undefined;
 		if (view) await view.openBook(file);

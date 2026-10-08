@@ -11,6 +11,7 @@ import type NyaReaderPlugin from "../main";
 import { BookshelfService, BookshelfSort, splitPath } from "../services/storage/BookshelfService";
 import type { BookshelfFolder } from "../services/storage/BookshelfService";
 import { BOOKSHELF_VIEW_TYPE } from "./BookshelfViewTypes";
+import { PromptModal } from "./components/PromptModal";
 
 const SORT_OPTIONS: Array<{ value: BookshelfSort; label: string }> = [
 	{ value: "recent", label: "最近阅读" },
@@ -214,11 +215,16 @@ export class BookshelfView extends ItemView {
 	}
 
 	private async createFolder(): Promise<void> {
-		const name = window.prompt("新建区域名称（将作为书架文件夹名）：");
-		if (name === null) return;
-		const ok = await this.service.createFolder(name);
-		new Notice(ok ? "NyaReader：已创建区域。" : "NyaReader：创建失败（名称非法或已存在）。");
-		void this.render();
+		new PromptModal(this.app, {
+			title: "新建区域",
+			placeholder: "区域名称（将作为书架文件夹名）",
+			submitText: "创建",
+			onSubmit: async (name) => {
+				const ok = await this.service.createFolder(name);
+				new Notice(ok ? `NyaReader：已创建区域「${name}」。` : "NyaReader：创建失败（名称非法或已存在）。");
+				void this.render();
+			},
+		}).open();
 	}
 
 	private async deleteBook(path: string): Promise<void> {

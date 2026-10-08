@@ -6,6 +6,7 @@
 import type { AnnotationTarget, IReaderEngine, ReaderEngineEvents } from "../../IReaderEngine";
 import { SimpleReaderEmitter } from "../../IReaderEngine";
 import type { BookModel, ReaderSettings } from "../../../../types";
+import { normalizeSelectionText } from "../../../../utils/text";
 
 export interface HtmlDocEngineOptions {
 	book: BookModel;
@@ -135,6 +136,10 @@ export class HtmlDocEngine implements IReaderEngine {
 				overflow-y: auto;
 			}
 			p { margin: 0 0 0.8em 0; }
+			/* KF8 内嵌资源（kindle:embed:/flow:）无法在浏览器解析，隐藏避免破图 */
+			img[src^="kindle:"], image[src^="kindle:"] { display: none; }
+			a[href^="kindle:"] { pointer-events: none; }
+			* { user-select: text; }
 		`;
 		this.doc.head.appendChild(style);
 	}
@@ -144,7 +149,7 @@ export class HtmlDocEngine implements IReaderEngine {
 		if (!win) return null;
 		const sel = win.getSelection();
 		if (!sel || sel.isCollapsed) return null;
-		const text = sel.toString().trim();
+		const text = normalizeSelectionText(sel.toString());
 		if (!text) return null;
 		const rects: AnnotationTarget["rects"] = [];
 		for (let i = 0; i < sel.rangeCount; i++) {

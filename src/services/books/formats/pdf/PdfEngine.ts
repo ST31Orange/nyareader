@@ -21,6 +21,7 @@ import type { Plugin } from "obsidian";
 import type { PDFDocumentProxy, PDFPageProxy, PageViewport } from "pdfjs-dist";
 import type { PageMetrics } from "../../../../utils/pdf-viewport";
 import { findVisibleRange, pageIndexAtMidpoint, pageSizeFromViewport, scrollTopForPage } from "../../../../utils/pdf-viewport";
+import { normalizeSelectionText } from "../../../../utils/text";
 
 export interface PdfEngineOptions {
 	plugin: Plugin;
@@ -636,7 +637,7 @@ export class PdfEngine implements IReaderEngine {
 	getSelection(): { text: string; target?: AnnotationTarget } | null {
 		const sel = window.getSelection();
 		if (!sel || sel.isCollapsed) return null;
-		const text = sel.toString().trim();
+		const text = normalizeSelectionText(sel.toString());
 		if (!text) return null;
 		const rects: NonNullable<AnnotationTarget["rects"]> = [];
 		let targetSlot: PageSlot | null = null;

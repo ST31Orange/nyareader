@@ -1,6 +1,6 @@
 /** 工具层与翻译分块逻辑的单测。 */
 import { describe, it, expect } from "vitest";
-import { splitTranslationChunks } from "../src/utils/text";
+import { splitTranslationChunks, normalizeSelectionText, htmlToPlainText } from "../src/utils/text";
 import { sha256Hex, fastFingerprint } from "../src/utils/hash";
 import { normalizeSettings } from "../src/settings";
 
@@ -28,6 +28,21 @@ describe("splitTranslationChunks", () => {
 		const chunks = splitTranslationChunks(text, 1000);
 		expect(chunks).toHaveLength(3);
 		expect(chunks.map((c) => c.text).join("")).toBe(text);
+	});
+});
+
+describe("normalizeSelectionText", () => {
+	it("PDF/分页划词的换行折叠为空格（去掉多余分段符）", () => {
+		expect(normalizeSelectionText("first line\nsecond line")).toBe("first line second line");
+	});
+	it("跨段划词压缩空行", () => {
+		expect(normalizeSelectionText("para one\n\n\npara two")).toBe("para one para two");
+	});
+	it("合并连续空格并去除首尾", () => {
+		expect(normalizeSelectionText("  a   b\t\tc  ")).toBe("a b c");
+	});
+	it("不换行时不改写内容", () => {
+		expect(normalizeSelectionText("Hello, world!")).toBe("Hello, world!");
 	});
 });
 

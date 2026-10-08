@@ -142,23 +142,47 @@ export class TranslationPanel {
 		void this.doTranslate(text);
 	}, 400);
 
+	/**
+	 * 翻译并展示：原文为可编辑 textarea（划词结果不准时可直接改后重译）。
+	 * 每次翻译重建原文区 + 译文区，结构清晰。
+	 */
 	private async doTranslate(text: string): Promise<void> {
-		if (this.busy) return;
+		const clean = text.trim();
+		if (!clean) return;
+		if (this.busy) {
+			// 上一条还在翻译：稍后由按钮触发重译
+			return;
+		}
 		this.show();
 		this.busy = true;
 		this.setStatus("翻译中…");
-		const source = this.bodyEl.createDiv({ cls: "nyareader-trans-source" });
-		source.textContent = text;
 		this.bodyEl.empty();
+
+		const source = this.bodyEl.createEl("textarea", {
+			cls: "nyareader-trans-source",
+			attr: { rows: "3", spellcheck: "false", title: "可修改原文后点「翻译」重新翻译" },
+		});
+		source.value = clean;
 		this.bodyEl.appendChild(source);
+
+		const actionRow = this.bodyEl.createDiv({ cls: "nyareader-trans-actions" });
+		const retranslateBtn = actionRow.createEl("button", { cls: "nyareader-trans-retranslate", text: "翻译" });
+		retranslateBtn.addEventListener("click", () => {
+			const edited = source.value.trim();
+			if (edited) void this.doTranslate(edited);
+		});
+
+		const target = this.bodyEl.createDiv({ cls: "nyareader-trans-target is-pending", text: "…" });
+		this.bodyEl.appendChild(target);
 		try {
 			const result = await this.opts.onTranslate(text, this.currentTo);
 			this.statusEl.setText("");
-			const target = this.bodyEl.createDiv({ cls: "nyareader-trans-target" });
 			target.textContent = result;
-			this.bodyEl.appendChild(target);
+			target.removeClass("is-pending");
+			retranslateBtn.setText("重新翻译");
 		} catch (e) {
 			this.statusEl.setText(`翻译失败：${e instanceof Error ? e.message : String(e)}`);
+			target.setText("（可修改原文后重新尝试）");
 		} finally {
 			this.busy = false;
 		}

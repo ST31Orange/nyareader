@@ -266,30 +266,54 @@ function textToHtml(text: Uint8Array): string {
 
 /**
  * KF8/AZW3 的正文是多个相互独立的 XHTML 文档拼接而成（Standard Ebooks 那本有 65 个）。
- * 浏览器只认第一个根节点，因此必须把各文档的 head/body 合并成单一文档。
+ * 观察真实 KF8 样本发现的关键结构（v0.3.3 重写合并策略）：
+ * - 每个 `<html>…</html>` 块是"骨架"：<head> 里有样式引用，<body> 是空的（aid="0"）；
+ * - 真实章节内容（<section>/<p>/<h1>…）位于骨架块之**间**；
+ * - 旧实现只取每个骨架 body 的 innerHTML，等于只拿到 65 个空 body → 白屏。
+ * 因此合并策略为：保留骨架之间（以及非空 body 内）的全部正文，丢弃空骨架；
+ * <head> 中若确有内联 <style> 才保留，跨文档丢弃 kindle:flow: 样式链接。
  */
 export function mergeHtmlDocuments(html: string): string {
-	const docs: string[] = [];
 	const re = /<html\b[\s\S]*?<\/html>/gi;
-	let m: RegExpExecArray | null;
-	while ((m = re.exec(html)) !== null) docs.push(m[0]);
-	if (docs.length <= 1) return html;
 	const heads: string[] = [];
-	const bodies: string[] = [];
-	for (const doc of docs) {
+	const bodyParts: string[] = [];
+	let m: RegExpExecArray | null;
+	let last = 0;
+	let docCount = 0;
+	while ((m = re.exec(html)) !== null) {
+		docCount++;
+		const doc = m[0];
+		// 骨架块之间/之前的内容（KF8 章节正文所在）
+		const between = stripXmlDecls(html.slice(last, m.index));
+		if (between.trim()) bodyParts.push(between);
+		// 仅保留含内联样式的 head
 		const head = /<head\b[^>]*>([\s\S]*?)<\/head>/i.exec(doc);
-		if (head) heads.push(head[1]);
+		if (head && /<style\b/i.test(head[1])) heads.push(head[1]);
+		// 单文档（MOBI6）时正文在 body 内，需要保留
 		const body = /<body\b[^>]*>([\s\S]*?)<\/body>/i.exec(doc);
-		bodies.push(body ? body[1] : doc);
+		const inner = body ? body[1] : "";
+		if (inner.trim()) bodyParts.push(inner);
+		last = m.index + doc.length;
 	}
+	if (docCount === 0) return html;
+	bodyParts.push(stripXmlDecls(html.slice(last)));
+	const bodyJoined = bodyParts
+		.join("\n")
+		.replace(/\r\n/g, "\n")
+		.replace(/\n{4,}/g, "\n\n")
+		.trim();
+	const title = extractTitle(html);
 	return (
 		`<!DOCTYPE html><html><head><meta charset="utf-8">` +
-		`<title>${extractTitle(html) ?? "mobi"}</title>` +
+		(title ? `<title>${title}</title>` : "") +
 		heads.join("\n") +
-		`</head><body>` +
-		bodies.join("\n") +
-		`</body></html>`
+		`</head><body>${bodyJoined}</body></html>`
 	);
+}
+
+/** 去掉 XML 声明（允许在任意位置出现）。 */
+function stripXmlDecls(s: string): string {
+	return s.replace(/<\?xml[^>]*\?>/gi, "").replace(/^\s*\n/, "");
 }
 
 function extractTitle(html: string): string | null {

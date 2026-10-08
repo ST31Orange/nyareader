@@ -26,6 +26,7 @@ import { PdfInlineAnnotationStore } from "../services/annotations/PdfInlineAnnot
 import { PdfBackupService } from "../services/annotations/PdfBackupService";
 import { SidecarAnnotationStore } from "../services/annotations/SidecarAnnotationStore";
 import { sha256Hex } from "../utils/hash";
+import { debounce } from "../utils/debounce";
 import { domRectToPdfRect, isWithinPage, mergeDomRects } from "../utils/pdf-coords";
 import type { ViewportLike } from "../utils/pdf-coords";
 import type { Annotation, AnnotationKind } from "../services/annotations/AnnotationModel";
@@ -47,6 +48,26 @@ export class ReaderController {
 	private onEngineError = (payload: { message: string }): void => {
 		this.events.onError(payload.message);
 	};
+
+	/** 进度持久化防抖：滚动时 locationChanged 高频触发，直接写盘会卡界面 */
+	private pendingProgress: { location: string; percentage: number } | null = null;
+	private saveProgressDebounced = debounce((location: string, percentage: number) => {
+		this.pendingProgress = null;
+		void this.saveProgress(location, percentage);
+	}, 500);
+
+	private queueProgress(location: string, percentage: number): void {
+		this.pendingProgress = { location, percentage };
+		this.saveProgressDebounced(location, percentage);
+	}
+
+	/** 切书/关窗前把未落盘的进度立即写入，避免防抖期间丢失。 */
+	private flushProgress(): void {
+		if (!this.pendingProgress) return;
+		const p = this.pendingProgress;
+		this.pendingProgress = null;
+		void this.saveProgress(p.location, p.percentage);
+	}
 
 	constructor(private plugin: NyaReaderPlugin, private events: ReaderControllerEvents) {
 		this.sidecar = new SidecarAnnotationStore(
@@ -71,6 +92,12 @@ export class ReaderController {
 	/** 打开一本书：解析 -> 建引擎 -> 挂载 -> 恢复进度。 */
 	async openBook(file: TFile, mountContainer: HTMLElement): Promise<void> {
 		try {
+			this.flushProgress();
+			// 先销毁旧引擎再解析新书：PDF 开着时解析 EPUB/TXT 会明显卡顿
+			this.teardownEngine();
+			this.book = null;
+			this.buffer = null;
+			this.file = null;
 			const buffer = await this.plugin.app.vault.adapter.readBinary(file.path);
 			const fingerprint = await sha256Hex(buffer);
 			const format = this.detectFormat(file.name, buffer);
@@ -122,6 +149,12 @@ export class ReaderController {
 		}
 	}
 
+	private teardownEngine(): void {
+		this.engine?.destroy();
+		this.engine = null;
+		this.pdfInline = null;
+	}
+
 	private detectFormat(name: string, buffer: ArrayBuffer): BookModel["format"] {
 		const sniffed = sniffFormat(buffer);
 		if (sniffed) return sniffed;
@@ -154,7 +187,7 @@ export class ReaderController {
 			engine.on("error", this.onEngineError);
 			engine.on("locationChanged", (payload) => {
 				this.events.onProgress(payload.percentage);
-				void this.saveProgress(payload.location, payload.percentage);
+				this.queueProgress(payload.location, payload.percentage);
 			});
 			engine.on("selection", (payload) => {
 				// 划词自动翻译由视图层监听 engine selection 完成（本控制器暴露 getSelection）
@@ -387,6 +420,7 @@ export class ReaderController {
 	}
 
 	async close(): Promise<void> {
+		this.flushProgress();
 		this.engine?.destroy();
 		this.engine = null;
 		this.book = null;

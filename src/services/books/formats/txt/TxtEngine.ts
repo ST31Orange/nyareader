@@ -17,6 +17,7 @@ import type { AnnotationTarget, IReaderEngine, ReaderEngineEvents } from "../../
 import { SimpleReaderEmitter } from "../../IReaderEngine";
 import type { BookModel, ReaderSettings } from "../../../../types";
 import type { TxtContent } from "./TxtParser";
+import { normalizeSelectionText } from "../../../../utils/text";
 
 export interface TxtEngineOptions {
 	book: BookModel;
@@ -52,6 +53,11 @@ export class TxtEngine implements IReaderEngine {
 	private destroyed = false;
 	private resizeObserver: ResizeObserver | null = null;
 	private renderRaf = 0;
+	/** 当前已渲染的段落区间，避免滚动时无条件重建 DOM */
+	private renderedStart = -1;
+	private renderedEnd = -1;
+	/** 上次发射进度的段索引（滚动不跨段时不必重复发射） */
+	private lastEmittedLocation = -1;
 
 	constructor(private opts: TxtEngineOptions) {
 		this.paragraphs = opts.content.paragraphs;
@@ -147,7 +153,7 @@ export class TxtEngine implements IReaderEngine {
 	getSelection(): { text: string; target?: AnnotationTarget } | null {
 		const sel = window.getSelection();
 		if (!sel || sel.isCollapsed) return null;
-		const text = sel.toString().trim();
+		const text = normalizeSelectionText(sel.toString());
 		if (!text) return null;
 		const rects: AnnotationTarget["rects"] = [];
 		for (let i = 0; i < sel.rangeCount; i++) {
@@ -178,6 +184,9 @@ export class TxtEngine implements IReaderEngine {
 	/** 重建高度估算与前缀和（字号/宽度变化时调用）。 */
 	private rebuildLayout(): void {
 		if (!this.paragraphs.length) return;
+		this.renderedStart = -1;
+		this.renderedEnd = -1;
+		this.lastEmittedLocation = -1;
 		const charsPerLine = this.charsPerLine();
 		const lineHeightPx = this.settings.fontSize * this.settings.lineHeight;
 		const spacingPx = this.settings.fontSize * PARAGRAPH_SPACING_EM;
@@ -245,17 +254,27 @@ export class TxtEngine implements IReaderEngine {
 		const end = Math.min(total, this.indexAtOffset(contentTop + viewH + buffer) + 1);
 		const anchorOffset = contentTop - (this.prefix[start] ?? 0);
 
-		this.renderRange(start, Math.max(start + 1, end));
-		this.measureRange(start, Math.max(start + 1, end));
+		if (start !== this.renderedStart || end !== this.renderedEnd) {
+			this.renderedStart = start;
+			this.renderedEnd = end;
+			this.renderRange(start, Math.max(start + 1, end));
+			this.measureRange(start, Math.max(start + 1, end));
+		}
 
 		const anchorTop = this.prefix[start] ?? 0;
 		this.windowEl.style.top = `${anchorTop + TOP_PAD}px`;
 		this.spacerEl.style.height = `${Math.max(0, (this.prefix[total] ?? 0) + TOP_PAD * 2)}px`;
-		// 测量修正后按锚点还原滚动位置，避免边读边跳
+		// 测量修正后按锚点还原滚动位置：仅当偏差已大到锚点将要滚出视口时才纠正，
+		// 否则每次滚动都微调 scrollTop 会与用户滚动“打架”，造成明显卡顿。
 		const restored = Math.max(0, Math.round(anchorTop + TOP_PAD + anchorOffset));
-		if (Math.abs(restored - scrollTop) > 1) this.scrollEl.scrollTop = restored;
+		const drift = Math.abs(restored - scrollTop);
+		if (drift > Math.max(24, viewH * 0.35)) this.scrollEl.scrollTop = restored;
 
-		this.emitProgress();
+		const idx = this.indexAtOffset(Math.max(0, (this.scrollEl?.scrollTop ?? 0) - TOP_PAD));
+		if (idx !== this.lastEmittedLocation) {
+			this.lastEmittedLocation = idx;
+			this.emitProgress();
+		}
 	}
 
 	private renderRange(start: number, end: number): void {
