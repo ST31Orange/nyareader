@@ -47,8 +47,8 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				});
 		});
-		new Setting(containerEl).setName("默认版式").setDesc("单栏 / 双栏（适用于 EPUB、TXT）").addDropdown((d) => {
-			d.addOptions({ single: "单栏", double: "双栏" })
+		new Setting(containerEl).setName("默认版式").setDesc("单页 / 双页（对开，适用于 EPUB/MOBI/AZW3）").addDropdown((d) => {
+			d.addOptions({ single: "单页", double: "双页" })
 				.setValue(this.plugin.settings.reader.layout)
 				.onChange(async (v) => {
 					this.plugin.settings.reader.layout = v as "single" | "double";
