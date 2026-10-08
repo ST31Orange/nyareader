@@ -1,7 +1,7 @@
 {
 	"id": "nyareader",
 	"name": "NyaReader",
-	"version": "0.3.21",
+	"version": "0.3.22",
 	"minAppVersion": "1.5.0",
 	"description": "多格式电子书阅读器：书架管理、EPUB/PDF/MOBI/AZW3/TXT 阅读、即划即译（NyaLingo）与批注。",
 	"author": "NyaHome",

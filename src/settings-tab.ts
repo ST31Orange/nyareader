@@ -86,10 +86,10 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 		const available = this.plugin.lingo.isAvailable();
 		new Setting(containerEl)
 			.setName("NyaLingo 翻译服务")
-			.setDesc(available ? "已安装并启用 ✅" : "未检测到 NyaLingo 插件，翻译不可用。点击右侧打开安装向导/设置。")
+			.setDesc(available ? "已安装并启用 ✅" : "未检测到 NyaLingo 插件，翻译不可用。点击右侧自动下载安装 NyaLingo（需网络，装好后重载）。")
 			.addButton((b) =>
-				b.setButtonText(available ? "打开 NyaLingo 设置" : "安装 / 配置 NyaLingo").setCta().onClick(() => {
-					this.plugin.lingo.openSettingsOrWizard();
+				b.setButtonText(available ? "打开 NyaLingo 设置" : "安装 / 修复 NyaLingo").setCta().onClick(() => {
+					void this.plugin.installLingo();
 				})
 			);
 

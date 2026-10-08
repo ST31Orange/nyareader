@@ -14,6 +14,7 @@ import { BOOKSHELF_VIEW_TYPE } from "./view/BookshelfViewTypes";
 import { BookIndexService } from "./services/storage/BookIndexService";
 import { HistoryStore } from "./services/history/HistoryStore";
 import { NyaLingoClient } from "./services/lingo/NyaLingoClient";
+import { NyaLingoInstaller } from "./services/lingo/NyaLingoInstaller";
 import { BookCoverService } from "./services/books/BookCoverService";
 import { formatFromExtension, sniffFormat } from "./services/books/Parser";
 import type { BookFormat } from "./types";
@@ -26,6 +27,8 @@ export default class NyaReaderPlugin extends Plugin {
 	history!: HistoryStore;
 	/** 翻译客户端：委托 NyaLingo 共享翻译服务。 */
 	lingo!: NyaLingoClient;
+	/** NyaLingo 自动"捎带安装"器。 */
+	lingoInstaller!: NyaLingoInstaller;
 	/** 书架封面提取与缓存。 */
 	cover!: BookCoverService;
 
@@ -45,9 +48,11 @@ export default class NyaReaderPlugin extends Plugin {
 
 		this.cover = new BookCoverService(this);
 
+		this.lingoInstaller = new NyaLingoInstaller(this.app);
+
 		this.lingo = new NyaLingoClient({
 			app: this.app,
-			onMissing: () => new Notice("NyaReader：未检测到 NyaLingo 翻译插件，翻译功能不可用。请安装并启用 NyaLingo。", 6000),
+			onMissing: () => new Notice("NyaReader：未检测到 NyaLingo 翻译插件，翻译功能不可用。可运行命令「安装 / 修复 NyaLingo 翻译插件」。", 6000),
 		});
 
 		this.registerView(READER_VIEW_TYPE, (leaf) => new ReaderView(leaf, this));
@@ -69,6 +74,12 @@ export default class NyaReaderPlugin extends Plugin {
 			id: "open-lingo-settings",
 			name: "打开翻译服务设置…",
 			callback: () => this.lingo.openSettingsOrWizard(),
+		});
+
+		this.addCommand({
+			id: "install-lingo",
+			name: "安装 / 修复 NyaLingo 翻译插件",
+			callback: () => void this.installLingo(),
 		});
 
 		// 桌面端菜单：右键支持格式文件 -> 打开
@@ -206,12 +217,37 @@ export default class NyaReaderPlugin extends Plugin {
 		this.app.workspace.revealLeaf(leaf);
 	}
 
-	/** 首次运行：NyaLingo 未安装时给出安装引导（仅一次，且不强制）。 */
+	/** 首次运行：NyaLingo 未安装时自动"捎带安装"（失败则提示手动安装）。 */
 	private async maybePromptLingo(): Promise<void> {
 		this.settings.translationPromptShown = true;
 		await this.saveSettings();
 		if (this.lingo.isAvailable()) return;
-		new Notice("NyaReader：推荐安装配套翻译插件 NyaLingo（离线+在线翻译）。可在命令面板运行「打开翻译服务设置…」。", 8000);
+		await this.installLingo();
+	}
+
+	/**
+	 * 安装 / 修复 NyaLingo：已加载则打开设置；否则尝试从 GitHub 自动下载安装，
+	 * 并登记进 community-plugins.json，重载后自动启用。
+	 */
+	async installLingo(): Promise<void> {
+		if (this.lingo.isAvailable()) {
+			this.lingo.openSettingsOrWizard();
+			return;
+		}
+		const result = await this.lingoInstaller.ensureInstalled(false);
+		switch (result.status) {
+			case "installed-needs-reload":
+				new Notice("NyaReader：已自动安装 NyaLingo 翻译插件，请重载 Obsidian（Ctrl+R）后即可使用翻译。", 9000);
+				break;
+			case "enable-needed":
+				new Notice("NyaReader：已检测到 NyaLingo，请在「设置 → 第三方插件」中启用它，然后重载 Obsidian。", 8000);
+				break;
+			case "failed":
+				new Notice(`NyaReader：NyaLingo 自动安装失败（${result.reason}）。可重试本命令，或手动安装（GitHub: ST31Orange/nyalingo）。`, 9000);
+				break;
+			default:
+				break;
+		}
 	}
 }
 
