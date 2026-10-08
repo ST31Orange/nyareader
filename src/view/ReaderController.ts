@@ -12,12 +12,11 @@ import type { TFile } from "obsidian";
 import type NyaReaderPlugin from "../main";
 import type { BookModel, ReaderSettings } from "../types";
 import { formatFromExtension, sniffFormat, IBookParser } from "../services/books/Parser";
-import type { IReaderEngine } from "../services/books/IReaderEngine";
+import type { AnnotationTarget, IReaderEngine } from "../services/books/IReaderEngine";
 import { PdfParser } from "../services/books/formats/pdf/PdfParser";
 import { PdfEngine } from "../services/books/formats/pdf/PdfEngine";
 import { initPdfWorker } from "../services/books/formats/pdf/pdfWorker";
 import { EpubParser } from "../services/books/formats/epub/EpubParser";
-import { EpubEngine } from "../services/books/formats/epub/EpubEngine";
 import { TxtParser } from "../services/books/formats/txt/TxtParser";
 import { TxtEngine } from "../services/books/formats/txt/TxtEngine";
 import { MobiParser } from "../services/books/formats/mobi/MobiParser";
@@ -38,6 +37,8 @@ export interface ReaderControllerEvents {
 }
 
 export class ReaderController {
+	/** 最近一次划词（鼠标划出后点标题栏按钮时选区常已被点击清空，用它兜底） */
+	private lastSelection: { text: string; target?: AnnotationTarget } | null = null;
 	private book: BookModel | null = null;
 	private buffer: ArrayBuffer | null = null;
 	private engine: IReaderEngine | null = null;
@@ -54,7 +55,7 @@ export class ReaderController {
 	private saveProgressDebounced = debounce((location: string, percentage: number) => {
 		this.pendingProgress = null;
 		void this.saveProgress(location, percentage);
-	}, 500);
+	}, 1200);
 
 	private queueProgress(location: string, percentage: number): void {
 		this.pendingProgress = { location, percentage };
@@ -93,6 +94,7 @@ export class ReaderController {
 	async openBook(file: TFile, mountContainer: HTMLElement): Promise<void> {
 		try {
 			this.flushProgress();
+			this.lastSelection = null;
 			// 先销毁旧引擎再解析新书：PDF 开着时解析 EPUB/TXT 会明显卡顿
 			this.teardownEngine();
 			this.book = null;
@@ -190,8 +192,9 @@ export class ReaderController {
 				this.queueProgress(payload.location, payload.percentage);
 			});
 			engine.on("selection", (payload) => {
-				// 划词自动翻译由视图层监听 engine selection 完成（本控制器暴露 getSelection）
-				void payload;
+				// 划词自动翻译由视图层完成；这里缓存选区，供标题栏「高亮/笔记」在
+				// 鼠标点击按钮清空 DOM 选区后仍然可用。
+				if (payload.text?.trim()) this.lastSelection = payload;
 			});
 		};
 		switch (format) {
@@ -210,7 +213,9 @@ export class ReaderController {
 				break;
 			}
 			case "epub": {
-				const engine = new EpubEngine({ book: this.book, buffer: this.buffer });
+				const html = await this.parseEpubHtml();
+				if (!html) throw new Error("EPUB 解析失败，请检查文件是否完整。");
+				const engine = new HtmlDocEngine({ book: this.book, html, formatLabel: "epub" });
 				attach(engine);
 				this.engine = engine;
 				await engine.mount(container);
@@ -258,6 +263,17 @@ export class ReaderController {
 		return result?.html ?? null;
 	}
 
+	private async parseEpubHtml(): Promise<string | null> {
+		if (!this.buffer) return null;
+		try {
+			const { buildEpubHtml } = await import("../services/books/formats/epub/EpubDocument");
+			return await buildEpubHtml(this.buffer);
+		} catch (e) {
+			console.error("NyaReader: EPUB 渲染文档构建失败", e);
+			return null;
+		}
+	}
+
 	currentReaderSettings(): ReaderSettings {
 		const base = this.plugin.settings.reader;
 		if (this.book && this.plugin.settings.bookOverrides[this.book.fingerprint]) {
@@ -287,7 +303,7 @@ export class ReaderController {
 	/** 划词批注：PDF 写文件本体；其他格式写侧车。 */
 	async addAnnotation(kind: AnnotationKind, note?: string): Promise<Annotation | null> {
 		if (!this.engine || !this.book || !this.file) return null;
-		const sel = this.engine.getSelection();
+		const sel = this.engine.getSelection() ?? this.lastSelection;
 		if (!sel || !sel.text.trim()) {
 			this.events.onError("请先选中要批注的文本。");
 			return null;
@@ -410,6 +426,9 @@ export class ReaderController {
 
 	private async saveProgress(location: string, percentage: number): Promise<void> {
 		if (!this.book) return;
+		const existing = this.plugin.bookIndex.get(this.book.fingerprint);
+		// 位置没变不写盘：滚动产生的重复事件不再触发磁盘写入
+		if (existing?.progress?.location === location) return;
 		await this.plugin.bookIndex.updateProgress(this.book.fingerprint, {
 			fingerprint: this.book.fingerprint,
 			format: this.book.format,

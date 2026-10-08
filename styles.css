@@ -618,6 +618,92 @@
 	color: var(--text-muted);
 	margin-top: 4px;
 }
+
+/* ===== 书架卡片显示模式（按区域） ===== */
+.nyareader-shelf-mode-btn {
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-primary);
+	color: var(--text-muted);
+	font-size: 11px;
+	border-radius: 999px;
+	padding: 2px 10px;
+	cursor: pointer;
+}
+.nyareader-shelf-mode-btn:hover {
+	color: var(--text-normal);
+	border-color: var(--interactive-accent);
+}
+.nyareader-shelf-cards.is-list {
+	grid-template-columns: 1fr;
+	gap: 4px;
+}
+/* 紧凑：一半高的小卡片 */
+.nyareader-shelf-card.is-compact {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 8px;
+	padding: 8px;
+	min-height: 44px;
+}
+.nyareader-shelf-card.is-compact .nyareader-shelf-cover {
+	width: 30px;
+	height: 40px;
+	margin-bottom: 0;
+	flex: none;
+}
+.nyareader-shelf-card.is-compact .nyareader-shelf-card-info {
+	min-height: 0;
+	flex: 1;
+}
+.nyareader-shelf-card.is-compact .nyareader-shelf-card-author {
+	display: none;
+}
+.nyareader-shelf-card.is-compact .nyareader-shelf-progress {
+	margin-top: 4px;
+}
+/* 列表：一行书名 */
+.nyareader-shelf-card.is-list {
+	display: flex;
+	align-items: center;
+	width: 100%;
+	padding: 5px 10px;
+	min-height: 30px;
+	margin-bottom: 2px;
+}
+.nyareader-shelf-card.is-list .nyareader-shelf-cover,
+.nyareader-shelf-card.is-list .nyareader-shelf-card-info {
+	display: none;
+}
+.nyareader-shelf-list-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	min-width: 0;
+}
+.nyareader-shelf-cover-ext.is-mini {
+	font-size: 9px;
+	background: var(--background-primary);
+	border-radius: 3px;
+	padding: 1px 4px;
+	color: var(--text-muted);
+	letter-spacing: 0.5px;
+	flex: none;
+}
+.nyareader-shelf-list-title {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 13px;
+}
+.nyareader-shelf-list-pct {
+	color: var(--text-muted);
+	font-size: 12px;
+	flex: none;
+}
 .nyareader-shelf-card-del {
 	position: absolute;
 	top: 6px;

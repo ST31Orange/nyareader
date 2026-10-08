@@ -15,6 +15,7 @@ import type NyaReaderPlugin from "../main";
 import { TranslationPanel } from "./TranslationPanel";
 import { ReaderController } from "./ReaderController";
 import { AnnotationListModal } from "./AnnotationListModal";
+import { PromptModal } from "./components/PromptModal";
 import type { ZoomMode } from "../services/books/IReaderEngine";
 import type { BookModel } from "../types";
 import { debounce } from "../utils/debounce";
@@ -429,17 +430,18 @@ export class ReaderView extends ItemView {
 		await this.controller?.addAnnotation("highlight");
 	}
 
-	private async addNote(): Promise<void> {
-		const note = await this.promptNote();
-		if (note === null) return;
-		await this.controller?.addAnnotation("note", note);
-	}
-
-	private promptNote(): Promise<string | null> {
-		return new Promise((resolve) => {
-			const input = window.prompt("笔记内容：");
-			resolve(input === null ? null : input.trim() || "");
-		});
+	private addNote(): void {
+		const controller = this.controller;
+		if (!controller) return;
+		new PromptModal(this.app, {
+			title: "添加笔记",
+			multiline: true,
+			placeholder: "笔记内容",
+			submitText: "添加",
+			onSubmit: async (note) => {
+				await controller.addAnnotation("note", note);
+			},
+		}).open();
 	}
 
 	private showWelcome(): void {

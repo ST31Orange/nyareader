@@ -2,6 +2,7 @@
 import { describe, it, expect } from "vitest";
 import JSZip from "jszip";
 import { EpubParser, parseNcx, parseEpub3Nav, parseOpf } from "../src/services/books/formats/epub/EpubParser";
+import { buildEpubHtml } from "../src/services/books/formats/epub/EpubDocument";
 import type { ParseContext } from "../src/services/books/Parser";
 
 const OPF = `<?xml version="1.0" encoding="utf-8"?>
@@ -87,10 +88,10 @@ describe("EpubParser 端到端", () => {
 		expect(book.author).toBe("Jane Austen");
 		expect(book.format).toBe("epub");
 		expect(book.spine).toHaveLength(2);
-		// 目录 location 对应 spine 索引
+		// 目录 location 对应章节锚点（HtmlDocEngine 内跳转）
 		const byLabel = new Map(book.toc.map((t) => [t.label, t.location]));
-		expect(byLabel.get("Chapter One")).toBe("0");
-		expect(byLabel.get("Chapter Two")).toBe("1");
+		expect(byLabel.get("Chapter One")).toBe("#nyareader-epub-0");
+		expect(byLabel.get("Chapter Two")).toBe("#nyareader-epub-1");
 		expect(book.toc.find((t) => t.label === "Chapter Two")?.children?.[0].label).toBe("Two Point A");
 	});
 
@@ -102,5 +103,47 @@ describe("EpubParser 端到端", () => {
 		await expect(
 			parser.parse({ fingerprint: "fp", path: "x.epub", format: "epub", buffer })
 		).rejects.toThrow(/container\.xml/);
+	});
+});
+
+describe("buildEpubHtml", () => {
+	it("把 spine 章节合并为单文档并生成章节锚点", async () => {
+		const buffer = await makeEpub();
+		const html = await buildEpubHtml(buffer);
+		// 合并为单 html
+		expect((html.match(/<html\b/gi) || []).length).toBe(1);
+		// 两章正文都在
+		expect(html).toContain("<p>one</p>");
+		expect(html).toContain("<p>two</p>");
+		// 章节锚点用于目录跳转
+		expect(html).toContain('id="nyareader-epub-0"');
+		expect(html).toContain('id="nyareader-epub-1"');
+		// 没有残留 xml 声明与脚本
+		expect(html).not.toContain("<?xml");
+	});
+
+	it("章节带图片时内联为 data URI / 缺失则清空 src", async () => {
+		const zip = new JSZip();
+		zip.file("mimetype", "application/epub+zip");
+		zip.file(
+			"META-INF/container.xml",
+			`<?xml version="1.0"?><container><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`
+		);
+		zip.file(
+			"OEBPS/content.opf",
+			`<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>T</dc:title></metadata>
+			<manifest><item id="c1" href="ch1.xhtml" media-type="application/xhtml+xml"/><item id="img" href="images/a.png" media-type="image/png"/></manifest>
+			<spine><itemref idref="c1"/></spine></package>`
+		);
+		zip.file(
+			"OEBPS/ch1.xhtml",
+			'<html><head></head><body><p>t</p><img src="images/a.png" alt="x"/><img src="missing.png" alt="y"/></body></html>'
+		);
+		zip.file("OEBPS/images/a.png", new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
+		const buffer = await zip.generateAsync({ type: "arraybuffer" });
+		const html = await buildEpubHtml(buffer);
+		expect(html).toContain("data:image/png;base64,");
+		// 缺失图片 src 被清空（配合 CSS 隐藏，不破图）
+		expect(html).toContain('src=""');
 	});
 });

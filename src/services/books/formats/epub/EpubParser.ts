@@ -8,9 +8,10 @@
  * - 解析只需要 container.xml / content.opf / toc（NCX 或 EPUB3 nav），
  *   完全可以在毫秒级完成；渲染仍由 EpubEngine 内的 epub.js 负责。
  */
-import JSZip from "jszip";
 import type { BookModel, TocItem } from "../../../../types";
 import type { IBookParser, ParseContext } from "../../Parser";
+import { openEpubZip, EPUB_ANCHOR_PREFIX } from "./EpubZipCache";
+import { findOpfPath } from "./EpubDocument";
 
 interface EpubNavItem {
 	label: string;
@@ -30,7 +31,7 @@ export class EpubParser implements IBookParser {
 	readonly format = "epub" as const;
 
 	async parse(ctx: ParseContext): Promise<BookModel> {
-		const zip = await JSZip.loadAsync(ctx.buffer);
+		const zip = await openEpubZip(ctx.buffer);
 		const opfPath = await findOpfPath(zip);
 		const opfFile = zip.file(opfPath);
 		if (!opfFile) throw new Error("EPUB 缺少 content.opf");
@@ -60,16 +61,6 @@ export class EpubParser implements IBookParser {
 			estimatedChars: data.spine.length,
 		};
 	}
-}
-
-/** 从 container.xml 找 content.opf 路径（EPUB 规范：META-INF/container.xml 的 rootfile full-path）。 */
-async function findOpfPath(zip: JSZip): Promise<string> {
-	const container = zip.file("META-INF/container.xml");
-	if (!container) throw new Error("EPUB 缺少 META-INF/container.xml");
-	const xml = await container.async("string");
-	const m = /<rootfile\b[^>]*full-path=["']([^"']+)["'][^>]*>/i.exec(xml);
-	if (!m) throw new Error("EPUB container.xml 缺少 rootfile");
-	return m[1];
 }
 
 /** 解析 OPF：元数据、manifest、spine、NCX/EPUB3 nav 引用。 */
@@ -162,7 +153,7 @@ export function parseEpub3Nav(xml: string, max = 1000): EpubNavItem[] {
 	return out;
 }
 
-/** 把目录条目映射为 TocItem；location 为 spine 索引（EpubEngine.display 接受索引）。 */
+/** 把目录条目映射为 TocItem；location 为章节锚点（HtmlDocEngine 内跳转用）。 */
 export function buildToc(items: EpubNavItem[], spine: Array<{ id: string; href: string }>): TocItem[] {
 	const resolveIndex = (href?: string): number => {
 		if (!href) return 0;
@@ -175,7 +166,7 @@ export function buildToc(items: EpubNavItem[], spine: Array<{ id: string; href: 
 			const item: TocItem = {
 				id: `epub-toc-${depth}-${i}`,
 				label: n.label || "(无标题)",
-				location: String(resolveIndex(n.href)),
+				location: `#${EPUB_ANCHOR_PREFIX}${resolveIndex(n.href)}`,
 			};
 			if (n.subitems?.length) item.children = walk(n.subitems, depth + 1);
 			return item;

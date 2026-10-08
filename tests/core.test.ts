@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import { splitTranslationChunks, normalizeSelectionText, htmlToPlainText } from "../src/utils/text";
 import { sha256Hex, fastFingerprint } from "../src/utils/hash";
 import { normalizeSettings } from "../src/settings";
+import { sanitizeBookshelfModes } from "../src/settings";
 
 describe("splitTranslationChunks", () => {
 	it("短文本不切块", () => {
@@ -77,5 +78,15 @@ describe("normalizeSettings", () => {
 		const s = normalizeSettings({ translation: { targetLanguage: "ja", mode: "online", timeoutMs: -5 } });
 		expect(s.translation.targetLanguage).toBe("ja");
 		expect((s.translation as unknown as Record<string, unknown>).mode).toBeUndefined();
+	});
+});
+
+describe("sanitizeBookshelfModes", () => {
+	it("只保留合法显示模式", () => {
+		expect(sanitizeBookshelfModes({ a: "compact", b: "list", c: "full", d: "weird" })).toEqual({ a: "compact", b: "list", c: "full" });
+	});
+	it("空/非法输入返回空对象", () => {
+		expect(sanitizeBookshelfModes(null)).toEqual({});
+		expect(sanitizeBookshelfModes("x")).toEqual({});
 	});
 });

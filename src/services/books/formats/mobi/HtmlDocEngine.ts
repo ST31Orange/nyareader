@@ -11,6 +11,8 @@ import { normalizeSelectionText } from "../../../../utils/text";
 export interface HtmlDocEngineOptions {
 	book: BookModel;
 	html: string;
+	/** 实际格式标识（epub/mobi/azw3）；默认 "html" */
+	formatLabel?: string;
 }
 
 const THEME_CSS: Record<ReaderSettings["theme"], string> = {
@@ -20,7 +22,9 @@ const THEME_CSS: Record<ReaderSettings["theme"], string> = {
 };
 
 export class HtmlDocEngine implements IReaderEngine {
-	readonly format = "html";
+	get format(): string {
+		return this.opts.formatLabel ?? "html";
+	}
 	private emitter = new SimpleReaderEmitter();
 	private container!: HTMLElement;
 	private iframe!: HTMLIFrameElement;
@@ -137,7 +141,7 @@ export class HtmlDocEngine implements IReaderEngine {
 			}
 			p { margin: 0 0 0.8em 0; }
 			/* KF8 内嵌资源（kindle:embed:/flow:）无法在浏览器解析，隐藏避免破图 */
-			img[src^="kindle:"], image[src^="kindle:"] { display: none; }
+			img[src^="kindle:"], image[src^="kindle:"], img[src=""] { display: none; }
 			a[href^="kindle:"] { pointer-events: none; }
 			* { user-select: text; }
 		`;

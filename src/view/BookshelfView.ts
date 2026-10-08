@@ -12,6 +12,7 @@ import { BookshelfService, BookshelfSort, splitPath } from "../services/storage/
 import type { BookshelfFolder } from "../services/storage/BookshelfService";
 import { BOOKSHELF_VIEW_TYPE } from "./BookshelfViewTypes";
 import { PromptModal } from "./components/PromptModal";
+import { BOOKSHELF_MODE_LABEL, BookshelfDisplayMode } from "../settings";
 
 const SORT_OPTIONS: Array<{ value: BookshelfSort; label: string }> = [
 	{ value: "recent", label: "最近阅读" },
@@ -158,29 +159,66 @@ export class BookshelfView extends ItemView {
 		for (const folder of this.folders) {
 			const zone = grid.createDiv({ cls: "nyareader-shelf-zone" });
 			zone.setAttribute("data-rel", folder.relPath);
-			zone.createDiv({ cls: "nyareader-shelf-zone-header" }).createEl("h3", { text: folder.name });
+			const zoneHeader = zone.createDiv({ cls: "nyareader-shelf-zone-header" });
+			zoneHeader.createEl("h3", { text: folder.name });
+			const mode = this.modeFor(folder.relPath);
+			zoneHeader.createEl("button", {
+				text: `显示：${BOOKSHELF_MODE_LABEL[mode]}`,
+				cls: "nyareader-shelf-mode-btn",
+				attr: { title: "切换卡片显示模式（完整 / 紧凑 / 列表），仅对本区域生效" },
+			}).addEventListener("click", () => void this.cycleMode(folder.relPath));
 			const zoneActions = zone.createDiv({ cls: "nyareader-shelf-zone-actions" });
 			if (folder.relPath) {
 				zoneActions.createEl("button", { text: "删除区域", cls: "nyareader-shelf-link" }).addEventListener("click", () => void this.deleteFolder(folder.relPath));
 			}
 			const cards = zone.createDiv({ cls: "nyareader-shelf-cards" });
+			if (mode === "list") cards.addClass("is-list");
 			const books = this.service.sortBooks(folder.books, this.sort);
 			if (!books.length) {
 				cards.createDiv({ cls: "nyareader-shelf-zone-empty", text: "（空区域，拖拽电子书到此处）" });
 			}
 			for (const book of books) {
-				cards.appendChild(this.buildCard(book.path));
+				cards.appendChild(this.buildCard(book.path, mode));
 			}
 			this.makeDropTarget(zone, folder.relPath);
 		}
 	}
 
-	private buildCard(path: string): HTMLElement {
+	/** 当前区域显示模式（默认完整卡片）。 */
+	private modeFor(relPath: string): BookshelfDisplayMode {
+		return this.plugin.settings.bookshelfModes[relPath] ?? "full";
+	}
+
+	/** 循环切换模式并持久化到设置。 */
+	private async cycleMode(relPath: string): Promise<void> {
+		const order: BookshelfDisplayMode[] = ["full", "compact", "list"];
+		const current = this.modeFor(relPath);
+		const next = order[(order.indexOf(current) + 1) % order.length];
+		this.plugin.settings.bookshelfModes[relPath] = next;
+		await this.plugin.saveSettings();
+		void this.render();
+	}
+
+	private buildCard(path: string, mode: BookshelfDisplayMode): HTMLElement {
 		const { base, ext } = splitPath(path);
 		const entry = this.plugin.bookIndex.list().find((e) => e.path === path);
 		const card = document.createElement("div");
-		card.className = "nyareader-shelf-card";
+		card.className = `nyareader-shelf-card is-${mode}`;
 		card.addEventListener("click", () => void this.openBook(path));
+
+		if (mode === "list") {
+			// 列表式：一行显示书名 + 进度
+			const row = card.createDiv({ cls: "nyareader-shelf-list-row" });
+			row.createSpan({ cls: "nyareader-shelf-cover-ext is-mini", text: ext.toUpperCase() });
+			row.createSpan({ cls: "nyareader-shelf-list-title", text: entry?.title ?? base });
+			row.createSpan({ cls: "nyareader-shelf-list-pct", text: `${Math.round((entry?.progress?.percentage ?? 0) * 100)}%` });
+			const del = card.createEl("button", { text: "✕", cls: "nyareader-shelf-card-del" });
+			del.addEventListener("click", (e) => {
+				e.stopPropagation();
+				void this.deleteBook(path);
+			});
+			return card;
+		}
 
 		const cover = card.createDiv({ cls: "nyareader-shelf-cover" });
 		cover.createSpan({ cls: "nyareader-shelf-cover-ext", text: ext.toUpperCase() });
@@ -196,7 +234,7 @@ export class BookshelfView extends ItemView {
 		bar.style.width = `${Math.round(progress * 100)}%`;
 		info.createDiv({
 			cls: "nyareader-shelf-card-meta",
-			text: `${Math.round(progress * 100)}%${entry?.lastOpenedAt ? ` · ${this.fmtTime(entry.lastOpenedAt)}` : ""}`,
+			text: mode === "compact" ? `${Math.round(progress * 100)}%` : `${Math.round(progress * 100)}%${entry?.lastOpenedAt ? ` · ${this.fmtTime(entry.lastOpenedAt)}` : ""}`,
 		});
 
 		// 删除按钮

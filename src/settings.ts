@@ -6,6 +6,14 @@
  */
 import type { ReaderSettings, ReaderTheme } from "./types";
 
+/** 书架卡片显示模式（按区域生效） */
+export type BookshelfDisplayMode = "full" | "compact" | "list";
+export const BOOKSHELF_MODE_LABEL: Record<BookshelfDisplayMode, string> = {
+	full: "完整",
+	compact: "紧凑",
+	list: "列表",
+};
+
 export interface TranslationSettings {
 	/** UI 级默认源/目标语言（默认中英互译：auto -> zh-Hans） */
 	sourceLanguage: string;
@@ -27,6 +35,8 @@ export interface NyaReaderSettings {
 	ui: ReaderUiSettings;
 	/** 首次运行时是否已提示安装翻译服务（NyaLingo） */
 	translationPromptShown: boolean;
+	/** 书架各区域的卡片显示模式：区域相对路径 -> 模式 */
+	bookshelfModes: Record<string, BookshelfDisplayMode>;
 	/** 批注侧车文件名后缀 */
 	annotationSidecarSuffix: string;
 }
@@ -55,6 +65,7 @@ export const DEFAULT_SETTINGS: NyaReaderSettings = {
 	translation: { ...DEFAULT_TRANSLATION_SETTINGS },
 	ui: { ...DEFAULT_UI_SETTINGS },
 	translationPromptShown: false,
+	bookshelfModes: {},
 	annotationSidecarSuffix: ".annotations",
 };
 
@@ -80,12 +91,23 @@ export function normalizeSettings(raw: unknown): NyaReaderSettings {
 			sourceLanguage: strOr(t.sourceLanguage, DEFAULT_TRANSLATION_SETTINGS.sourceLanguage),
 			targetLanguage: strOr(t.targetLanguage, DEFAULT_TRANSLATION_SETTINGS.targetLanguage),
 		},
+		bookshelfModes: sanitizeBookshelfModes(v.bookshelfModes),
 		ui: {
 			translationPanelWidth: clamp(Number(u.translationPanelWidth), 240, 760, DEFAULT_UI_SETTINGS.translationPanelWidth),
 		},
 		translationPromptShown: v.translationPromptShown === true,
 		annotationSidecarSuffix: strOr(v.annotationSidecarSuffix, DEFAULT_SETTINGS.annotationSidecarSuffix),
 	};
+}
+
+/** 只保留合法的显示模式值。 */
+export function sanitizeBookshelfModes(raw: unknown): Record<string, BookshelfDisplayMode> {
+	if (!raw || typeof raw !== "object") return {};
+	const out: Record<string, BookshelfDisplayMode> = {};
+	for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+		if (v === "full" || v === "compact" || v === "list") out[k] = v;
+	}
+	return out;
 }
 
 function clamp(n: number, min: number, max: number, fallback: number): number {
