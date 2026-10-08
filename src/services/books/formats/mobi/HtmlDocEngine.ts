@@ -33,10 +33,14 @@ const THEME_CSS: Record<ReaderSettings["theme"], string> = {
 	sepia: "html { background:#e9e0cd; } body { color:#5b4636; }",
 };
 
-/** 双页对开时左右页之间的槽宽（px） */
+/** 单页时槽宽（px） */
 const GUTTER = 40;
-/** 页面左右内边距（px）：让正文不贴死页面边缘 */
+/** 双页对开时的槽宽（px）：更窄，缩小中间留白 */
+const GUTTER_DOUBLE = 30;
+/** 单页页左右内边距（px）：让正文不贴死页面边缘 */
 const PAGE_MARGIN_X = 32;
+/** 双页页左右内边距（px）：更窄，配合窄槽宽缩小中间留白 */
+const PAGE_MARGIN_X_DOUBLE = 20;
 /** 页面上下内边距（px） */
 const PAGE_MARGIN_Y = 20;
 /** 页面与阅读区边缘的留白（px），页面尽量铺满、避免四周一大圈灰 */
@@ -76,7 +80,6 @@ export class HtmlDocEngine implements IReaderEngine {
 	private currentPage = 1;
 	private pageW = 480;
 	private pageH = 680;
-	private gutter = GUTTER;
 	/** 实际生效的双页对开（窗口太窄时自动退回单页） */
 	private effectiveDouble = false;
 	/** 监听 iframe 元素尺寸变化（父文档实测，比 iframe 内部 resize 更可靠） */
@@ -159,6 +162,16 @@ export class HtmlDocEngine implements IReaderEngine {
 	/** 双页对开 = 分页模式 + layout==="double"。 */
 	private isDouble(): boolean {
 		return this.settings.layout === "double";
+	}
+
+	/** 页左右内边距：双页用更窄的边距缩小中间槽缝，单页保持舒适留白 */
+	private pageMarginX(): number {
+		return this.isDouble() ? PAGE_MARGIN_X_DOUBLE : PAGE_MARGIN_X;
+	}
+
+	/** 栏间距（槽宽）：双页用更窄的槽宽缩小中间留白 */
+	private pageGutter(): number {
+		return this.isDouble() ? GUTTER_DOUBLE : GUTTER;
 	}
 
 	// ---------- 键盘（iframe 内容窗口内） ----------
@@ -285,8 +298,8 @@ export class HtmlDocEngine implements IReaderEngine {
 		const bookRect = this.paged?.getBoundingClientRect();
 		const elRect = el.getBoundingClientRect();
 		if (!bookRect) return this.currentPage;
-		const x = elRect.left - bookRect.left - PAGE_MARGIN_X;
-		const col = Math.round(x / (this.pageW + this.gutter));
+		const x = elRect.left - bookRect.left - this.pageMarginX();
+		const col = Math.round(x / (this.pageW + this.pageGutter()));
 		return Math.max(1, Math.min(this.pages, this.currentPage - 1 + col + 1));
 	}
 
@@ -400,7 +413,7 @@ export class HtmlDocEngine implements IReaderEngine {
 		const m = this.settings.margin;
 		style.textContent = `
 			${THEME_CSS[this.settings.theme]}
-			:root { --nyar-page-w: 480px; --nyar-page-h: 680px; --nyar-gutter: ${GUTTER}px; }
+			:root { --nyar-page-w: 480px; --nyar-page-h: 680px; --nyar-gutter: ${this.pageGutter()}px; }
 			html { font-size: ${this.effectiveFontSize()}px; overflow: ${paged ? "hidden" : "auto"}; }
 			body {
 				font-family: ${this.settings.fontFamily};
@@ -424,7 +437,7 @@ export class HtmlDocEngine implements IReaderEngine {
 				background: ${dark ? "#212124" : "#ffffff"};
 				box-shadow: 0 2px 18px rgba(0,0,0,${dark ? 0.45 : 0.16});
 				/* 页内边距：正文不贴死页面边缘 */
-				padding: ${PAGE_MARGIN_Y}px ${PAGE_MARGIN_X}px;
+				padding: ${PAGE_MARGIN_Y}px ${this.pageMarginX()}px;
 				box-sizing: border-box;
 			}
 			.nyareader-columns {
@@ -479,14 +492,14 @@ export class HtmlDocEngine implements IReaderEngine {
 		const vh = this.iframe?.clientHeight || 600;
 		const availW = Math.max(180, vw - OUTER_PAD * 2 - SAFETY * 2);
 		const availH = Math.max(180, vh - OUTER_PAD * 2 - SAFETY * 2);
-		const wDouble = Math.round((availW - this.gutter - PAGE_MARGIN_X * 2) / 2);
+		const wDouble = Math.round((availW - this.pageGutter() - this.pageMarginX() * 2) / 2);
 		// 双页对开：可用宽足够 且 每页宽 ≥ 300px（太窄时退单页，避免两页过窄、
 		// 中间大片空白、右页被裁）
 		this.effectiveDouble = this.isDouble() && availW >= MIN_SPREAD_WIDTH && wDouble >= 300;
-		const w = this.effectiveDouble ? wDouble : Math.round(availW - PAGE_MARGIN_X * 2);
+		const w = this.effectiveDouble ? wDouble : Math.round(availW - this.pageMarginX() * 2);
 		const h = Math.round(availH);
 		return {
-			w: Math.max(120, Math.min(w, availW - PAGE_MARGIN_X * 2)),
+			w: Math.max(120, Math.min(w, availW - this.pageMarginX() * 2)),
 			h: Math.max(120, Math.min(h, availH)),
 		};
 	}
@@ -500,8 +513,8 @@ export class HtmlDocEngine implements IReaderEngine {
 		const root = this.doc.documentElement;
 		root.style.setProperty("--nyar-page-w", `${w}px`);
 		root.style.setProperty("--nyar-page-h", `${h}px`);
-		root.style.setProperty("--nyar-gutter", `${this.gutter}px`);
-		const bookW = (this.effectiveDouble ? w * 2 + this.gutter : w) + PAGE_MARGIN_X * 2;
+		root.style.setProperty("--nyar-gutter", `${this.pageGutter()}px`);
+		const bookW = (this.effectiveDouble ? w * 2 + this.pageGutter() : w) + this.pageMarginX() * 2;
 		this.paged.style.width = `${bookW}px`;
 		this.paged.style.height = `${h}px`;
 
@@ -510,7 +523,7 @@ export class HtmlDocEngine implements IReaderEngine {
 		this.currentPage = Math.max(1, Math.min(this.pages, Math.round(prevPct * this.pages) || 1));
 		if (this.effectiveDouble && this.currentPage % 2 === 0) this.currentPage -= 1;
 		const vis = this.currentPage - 1;
-		this.columnsEl.style.transform = `translateX(${-vis * (w + this.gutter)}px)`;
+		this.columnsEl.style.transform = `translateX(${-vis * (w + this.pageGutter())}px)`;
 		if (emit) this.emitProgress();
 	}
 
@@ -540,9 +553,9 @@ export class HtmlDocEngine implements IReaderEngine {
 		const oldTransform = cols.style.transform;
 		cols.style.transform = "";
 		const bookLeft = book.getBoundingClientRect().left;
-		const right = last.getBoundingClientRect().right - bookLeft - PAGE_MARGIN_X;
+		const right = last.getBoundingClientRect().right - bookLeft - this.pageMarginX();
 		cols.style.transform = oldTransform;
-		const col = Math.max(0, Math.round(right / (this.pageW + this.gutter)));
+		const col = Math.max(0, Math.round(right / (this.pageW + this.pageGutter())));
 		return Math.max(1, col + 1);
 	}
 
@@ -555,7 +568,7 @@ export class HtmlDocEngine implements IReaderEngine {
 		this.currentPage = Math.max(1, Math.min(this.pages, page));
 		if (this.effectiveDouble && this.currentPage % 2 === 0) this.currentPage -= 1;
 		const vis = this.currentPage - 1;
-		this.columnsEl.style.transform = `translateX(${-vis * (this.pageW + this.gutter)}px)`;
+		this.columnsEl.style.transform = `translateX(${-vis * (this.pageW + this.pageGutter())}px)`;
 		if (emit) this.emitProgress();
 	}
 
