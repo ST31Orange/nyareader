@@ -17,7 +17,7 @@ import {
 	bookshelfAnchor,
 	setAnnotationSidecarDir,
 } from "./utils/annotation-sidecar-path";
-import { migrationOps, planBookshelfMigration } from "./utils/migration-plan";
+import { moveFolder, resolveMoveTarget, type MovePort } from "./utils/move-folder";
 
 export class NyaReaderSettingTab extends PluginSettingTab {
 	constructor(
@@ -98,15 +98,16 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("迁移位置")
 			.setDesc(
-				`当前目录：${anchor}（书库在 ${shelfDir}，批注在 ${annotationDir}）。` +
-					`迁移时只填**上级目录**（例如 nyareader、或 日历/NyaReader），程序会把 library 与 annotations 一起搬进去。` +
-					`目标可以不存在（自动创建），也可以是已有目录（例如 日历）；目标下若已有同名 library/annotations 会提示而不覆盖。`
+				`当前目录：${anchor}（书库 ${shelfDir}、批注 ${annotationDir}）。` +
+					`**填什么就搬到哪里**：填「日历/NyaReader」就搬到那个路径。` +
+					`程序会把整个目录（含 library 与 annotations）递归搬过去，目标不存在会自动创建；` +
+					`目标下若已有同名内容则不覆盖并提示。`
 			)
 			.addButton((b) =>
 				b.setButtonText("迁移…").onClick(() => {
 					new PromptModal(this.app, {
 						title: "迁移 NyaReader 目录",
-						placeholder: "上级目录，例如 nyareader",
+						placeholder: "目标位置，例如 日历/NyaReader",
 						initialValue: anchor,
 						submitText: "迁移",
 						onSubmit: async (value) => {
@@ -240,129 +241,88 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 	/**
 	 * 迁移 NyaReader 目录。
 	 *
-	 * **用户期望的语义**：只填/选一个**上级目录**（如 `nyareader`），
-	 * 程序把 `library` 与 `annotations` 一起搬进它。
+	 * **用户明确要求的做法**：不要再"自己造目录"、不要区分一级/二级，
+	 * 直接把**旧目录整个打开、内容全部搬过去**，然后重建索引。
 	 *
-	 * 之前两个问题（用户实测）：
-	 * 1. 只搬 `library`，`annotations` 留在原地 → 批注"消失"；
-	 * 2. **先把目标目录建出来、再往里 rename 整个上级目录** → Obsidian 直接报
-	 *    `Destination file already exists`（目标已存在就无法整体改名）。
+	 * 实际执行（全部交给已被真实文件系统单测覆盖的 `moveFolder()`）：
+	 * 1. 算出当前目录 `from`（一般是 `nyareader`，即 library/annotations 的共同上级）；
+	 * 2. 算出目标 `to`：若你填的路径最后一段就是目录名（如 `日历/NyaReader`）→ 它本身；
+	 *    否则（如 `日历`）→ 搬成 `日历/<目录名>`（和拖文件夹的直觉一致）；
+	 * 3. 递归把 `from` 下**每一个条目**搬到 `to`（先子项后目录，目标父目录先建好）；
+	 * 4. 更新设置、阅读进度索引里所有书路径、批注目录，并刷新设置页。
 	 *
-	 * 现在的做法：
-	 * - 目标上级目录**已存在** → 把 `library` / `annotations` 两个子目录**分别移进去**
-	 *   （走 DataAdapter.rename，绕开"目标必须不存在"的限制）；
-	 * - 目标上级目录**不存在** → 直接整体重命名上级目录（一次搬完，最快）；
-	 * - 只允许"目标本身为空或不存在"，避免与已有文件混住。
+	 * 冲突（目标下已有同名文件/目录）会**在动手之前**拒绝，不会产生半搬状态。
 	 */
 	private async migrateBookshelf(rawTarget: string): Promise<void> {
 		const app = this.plugin.app;
-		const adapter = app.vault.adapter;
 		const oldShelf = this.plugin.settings.bookshelfDir || DEFAULT_BOOKSHELF_DIR;
 		const oldAnnotations = this.plugin.settings.annotationDir || annotationDirForBookshelf(oldShelf);
-		const oldParent = bookshelfAnchor(oldShelf, oldAnnotations);
 
-		// 决策交给纯函数（可单测）：错误原因、目标路径、采用哪种搬法
-		const plan = planBookshelfMigration({
-			bookshelfDir: oldShelf,
-			annotationDir: oldAnnotations,
-			rawTarget,
-			targetState: this.describeTarget(rawTarget.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "").replace(/\/(library|annotations)$/i, "")),
-			shelfExists: app.vault.getAbstractFileByPath(oldShelf) instanceof TFolder,
-		});
-		if (plan.error || !plan.anchor || !plan.newShelfDir || !plan.newAnnDir) {
-			if (plan.error) new Notice(`NyaReader：${plan.error}`, 8000);
+		// 源 = 当前目录（library 与 annotations 的共同上级；不标准时退回书库目录本身）
+		const from = bookshelfAnchor(oldShelf, oldAnnotations);
+		if (!(app.vault.getAbstractFileByPath(from) instanceof TFolder)) {
+			new Notice(`NyaReader：找不到当前目录「${from}」，无法迁移。`, 8000);
 			return;
 		}
-		const { anchor, newShelfDir, newAnnDir } = plan;
 
-		try {
-			// 操作序列由纯函数给出（有单测锁两条铁律）：
-			// ① 必须先 ensure-parent 再搬子目录（否则目标父目录不存在 → ENOENT）；
-			// ② 不再"整体搬上级目录" —— 那个操作要求目标父目录已存在且源恰好是二级目录，
-			//    在"搬二级目录"两种情况下都必然 ENOENT（用户实测）。
-			const ops = migrationOps(plan, oldParent, oldShelf, oldAnnotations);
-			if (!ops.length) {
-				new Notice("NyaReader：迁移计划为空，未做任何改动。");
-				return;
-			}
-			let annotationsMoved = true;
-			let moved = false;
-			for (const op of ops) {
-				switch (op.kind) {
-					case "ensure-parent":
-						await this.mkdirpVault(op.path);
-						break;
-					case "move-shelf": {
-						const shelfFolder = app.vault.getAbstractFileByPath(op.from);
-						if (!(shelfFolder instanceof TFolder)) {
-							new Notice("NyaReader：找不到当前书库目录，未做任何改动。");
-							return;
-						}
-						if (app.vault.getAbstractFileByPath(op.to)) {
-							new Notice(`NyaReader：目标下已存在「${op.to}」，请先清空或换一个目录。`, 10000);
-							return;
-						}
-						await adapter.rename(op.from, op.to);
-						moved = true;
-						break;
-					}
-					case "move-annotations": {
-						const annFolder = app.vault.getAbstractFileByPath(op.from);
-						if (!(annFolder instanceof TFolder)) break; // 本来就没有批注目录
-						if (app.vault.getAbstractFileByPath(op.to)) {
-							annotationsMoved = false; // 目标已有同名批注目录，不覆盖
-							break;
-						}
-						try {
-							await adapter.rename(op.from, op.to);
-						} catch {
-							annotationsMoved = false;
-						}
-						break;
-					}
-					default:
-						break;
-				}
-			}
-			if (!moved) {
-				new Notice("NyaReader：没有可迁移的目录，未做任何改动。");
-				return;
-			}
-			await this.finishMigration(oldShelf, newShelfDir, oldAnnotations, newAnnDir, annotationsMoved, anchor);
-		} catch (e) {
-			// 失败时把"当时到底在做什么"一并抛给用户/控制台，避免只有一句英文原文难以定位
-			const detail = {
-				strategy: plan.strategy,
-				anchor,
-				oldParent,
-				oldShelf,
-				oldAnnotations,
-				newShelfDir,
-				newAnnDir,
-				error: e instanceof Error ? e.message : String(e),
-			};
-			console.error("[NyaReader] 迁移失败", detail, e);
+		const raw = (rawTarget ?? "").trim();
+		const resolved = resolveMoveTarget({ from, rawTarget: raw });
+		if (resolved.error || !resolved.to) {
+			new Notice(`NyaReader：${resolved.error}`, 8000);
+			return;
+		}
+		const to = resolved.to;
+
+		const res = await moveFolder(this.movePort(), from, to);
+		if (!res.ok) {
+			const why = res.conflicts?.length ? `目标下已存在同名内容（${res.conflicts.slice(0, 3).join("、")}）` : res.error;
+			console.error("[NyaReader] 迁移失败", { from, to, ...res });
 			new Notice(
-				`NyaReader：迁移失败：${detail.error}\n（把 ${oldShelf} 搬进 ${anchor}）`,
+				`NyaReader：迁移失败：${why}\n（把「${from}」搬到「${to}」${res.rolledBack === false ? "；回滚未完全成功" : "；已回滚"}）`,
 				12000
 			);
+			return;
 		}
+
+		// 搬完后重新推导两个子目录的新位置（目录整体搬走，内部结构不变）
+		const tail = (p: string): string => p.slice(p.lastIndexOf("/") + 1);
+		const newShelf = `${to}/${tail(oldShelf)}`;
+		const newAnnotations = `${to}/${tail(oldAnnotations)}`;
+		await this.finishMigration(oldShelf, newShelf, oldAnnotations, newAnnotations, true, to, from, res.moved);
 	}
 
-	/** 目标目录的当前状态（供迁移决策使用）。 */
-	private describeTarget(dir: string): "missing" | "empty-folder" | "non-empty-folder" | "file" {
-		const cleaned = dir.replace(/\/+$/, "");
-		if (!cleaned) return "missing";
-		const f = this.plugin.app.vault.getAbstractFileByPath(cleaned);
-		if (!f) return "missing";
-		if (!(f instanceof TFolder)) return "file";
-		return f.children.length === 0 ? "empty-folder" : "non-empty-folder";
+	/** 把 `moveFolder` 需要的文件操作接到 Obsidian 的 vault 上。 */
+	private movePort(): MovePort {
+		const app = this.plugin.app;
+		const adapter = app.vault.adapter;
+		return {
+			exists: (p) => adapter.exists(p).catch(() => false),
+			mkdirp: async (p) => this.mkdirpVault(p),
+			list: async (p) => {
+				const listed = await adapter.list(p).catch(() => ({ files: [], folders: [] }));
+				return [...listed.folders, ...listed.files].map((full) => full.slice(full.lastIndexOf("/") + 1));
+			},
+			isDir: async (p) => {
+				const st = await adapter.stat(p).catch(() => null);
+				return st?.type === "folder";
+			},
+			// 走 vault.rename：Obsidian 会同步它自己的文件缓存（单纯 fs rename 不会）
+			rename: async (from, to) => {
+				const file = app.vault.getAbstractFileByPath(from);
+				if (!file) throw new Error(`找不到「${from}」`);
+				await app.vault.rename(file, to);
+			},
+			removeDir: async (p) => {
+				const file = app.vault.getAbstractFileByPath(p);
+				if (file) await app.vault.delete(file, true);
+			},
+		};
 	}
 
 	/**
-	 * 迁移收尾：更新设置 + 阅读进度索引路径 + 批注目录注入。
+	 * 迁移收尾：更新设置 + 阅读进度索引路径 + 批注目录注入 + 刷新设置页。
 	 *
-	 * @param annotationsMoved 批注目录是否确实搬走了（没搬走就保持原路径，批注仍可用）
+	 * @param movedCount 实际搬动的文件数（用于给用户一个可核对的数字）
 	 */
 	private async finishMigration(
 		oldShelf: string,
@@ -370,23 +330,29 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 		oldAnnotations: string,
 		newAnnotations: string,
 		annotationsMoved: boolean,
-		anchorDir: string
+		anchorDir: string,
+		fromDir: string,
+		movedCount: number
 	): Promise<void> {
 		// 阅读进度索引里的书路径也要跟着改，否则"进度全部丢失"
 		const oldPrefix = `${oldShelf}/`;
 		const newPrefix = `${newShelf}/`;
+		let updated = 0;
 		for (const e of this.plugin.bookIndex.list()) {
-			if (e.path.startsWith(oldPrefix)) await this.plugin.bookIndex.upsert({ ...e, path: e.path.replace(oldPrefix, newPrefix) });
+			if (e.path.startsWith(oldPrefix)) {
+				await this.plugin.bookIndex.upsert({ ...e, path: e.path.replace(oldPrefix, newPrefix) });
+				updated++;
+			}
 		}
 		this.plugin.settings.bookshelfDir = newShelf;
 		this.plugin.settings.annotationDir = annotationsMoved ? newAnnotations : oldAnnotations;
 		setAnnotationSidecarDir(this.plugin.settings.annotationDir);
 		await this.plugin.saveSettings();
+		console.info("[NyaReader] 迁移完成", { fromDir, anchorDir, movedCount, shelf: newShelf, annotations: this.plugin.settings.annotationDir, indexUpdated: updated });
 		new Notice(
-			annotationsMoved
-				? `NyaReader：已迁移到「${anchorDir}」（library 与 annotations 一并搬走）。`
-				: `NyaReader：书库已迁移到「${newShelf}」，但批注目录未能搬迁，仍留在「${oldAnnotations}」。`,
-			8000
+			`NyaReader：已迁移「${fromDir}」→「${anchorDir}」（${movedCount} 个文件；` +
+				`进度索引更新 ${updated} 条）。若书架显示异常，重启一次 Obsidian 即可重建索引。`,
+			10000
 		);
 		this.display();
 	}
