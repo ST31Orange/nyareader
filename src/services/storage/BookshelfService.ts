@@ -56,6 +56,22 @@ export interface BookshelfFolder {
 
 export type BookshelfSort = "recent" | "title" | "progress";
 
+/** 收书时的一个可撤销步骤。 */
+export type VaultImportStep =
+	| { kind: "created"; path?: string }
+	| { kind: "renamed"; from?: string; to?: string };
+
+/** 收书结果（`steps` 用于撤销）。 */
+export interface VaultImportResult {
+	/** 源路径 */
+	src: string;
+	/** 收进书库后的路径（成功时） */
+	dest?: string;
+	ok: boolean;
+	steps: VaultImportStep[];
+	error?: string;
+}
+
 /** 从路径取文件名与扩展名（兼容正反斜杠）。 */
 export function splitPath(p: string): { dir: string; base: string; ext: string } {
 	const parts = p.replace(/\\/g, "/").split("/");
@@ -189,6 +205,114 @@ export class BookshelfService {
 	}
 
 	/** 删除一本书（文件本身）。 */
+	/**
+	 * 把 vault 里**已有的**电子书收进书库（从 Obsidian 文件栏拖进书架时用）。
+	 *
+	 * 语义：
+	 * - 已在书库内（含在别的文件夹）→ **移动**到目标文件夹；
+	 * - 在书库外 → 按 `mode` 移动或复制进来。
+	 *
+	 * 每本都返回 `steps` 供调用方**撤销**（C 方案）。同名冲突交给 {@link uniquePath}
+	 * 自动改名，**绝不覆盖**。
+	 */
+	async importVaultBooks(
+		paths: readonly string[],
+		targetLibraryRel: string,
+		targetFolderRel: string,
+		mode: "move" | "copy"
+	): Promise<{ imported: number; results: VaultImportResult[] }> {
+		const results: VaultImportResult[] = [];
+		let imported = 0;
+		const destDir = this.join(this.libraryDir, targetLibraryRel, targetFolderRel);
+		for (const raw of paths) {
+			const src = this.normalize(raw ?? "");
+			try {
+				if (!src || !(await this.adapter.exists(src))) continue;
+				const fileName = src.slice(src.lastIndexOf("/") + 1);
+				const { ext } = splitPath(fileName);
+				if (!SUPPORTED_BOOK_EXT.has(ext)) continue;
+				// 拖到它已经在的那个文件夹：无操作（避免"搬到自己身上"报错）
+				if (src.startsWith(`${destDir}/`) && !src.slice(destDir.length + 1).includes("/")) {
+					results.push({ src, ok: false, steps: [], error: "这本书已经在这个文件夹里了" });
+					continue;
+				}
+				await this.adapter.mkdir(destDir).catch(() => undefined);
+				const dest = await this.uniquePath(destDir, fileName);
+				const steps: VaultImportStep[] = [];
+				const inLibrary = this.isInsideLibrary(src);
+				if (mode === "copy" && !inLibrary) {
+					await this.adapter.writeBinary(dest, await this.adapter.readBinary(src));
+					steps.push({ kind: "created", path: dest });
+				} else {
+					// 先记下"书旁边的旧批注侧车"的**实际存在情况**，撤销时才能准确搬回
+					const sidecars: Array<{ from: string; to: string }> = [];
+					for (const [from, to] of this.adjacentSidecarPairs(src, dest)) {
+						if (await this.adapter.exists(from).catch(() => false)) sidecars.push({ from, to });
+					}
+					await this.adapter.rename(src, dest);
+					steps.push({ kind: "renamed", from: src, to: dest });
+					for (const { from, to } of sidecars) {
+						try {
+							if (await this.adapter.exists(to).catch(() => false)) continue;
+							await this.adapter.rename(from, to);
+							steps.push({ kind: "renamed", from, to });
+						} catch {
+							/* 侧车失败不影响书本身 */
+						}
+					}
+				}
+				results.push({ src, dest, ok: true, steps });
+				imported++;
+			} catch (e) {
+				results.push({ src: raw ?? "", ok: false, steps: [], error: e instanceof Error ? e.message : String(e) });
+			}
+		}
+		return { imported, results };
+	}
+
+	/** 书旁旧批注侧车的"源 → 目标"配对（用于随书搬迁与撤销）。 */
+	private adjacentSidecarPairs(src: string, dest: string): Array<[string, string]> {
+		const stemOf = (p: string): { stem: string; withExt: string } => {
+			const slash = p.lastIndexOf("/");
+			const dot = p.lastIndexOf(".");
+			const withExt = p;
+			const stem = dot > slash + 1 ? p.slice(0, dot) : p;
+			return { stem, withExt };
+		};
+		const s = stemOf(src);
+		const d = stemOf(dest);
+		const suffixes = [".annotations.json", ".annotations.v2.json"];
+		const pairs: Array<[string, string]> = [];
+		for (const suffix of suffixes) {
+			pairs.push([`${s.withExt}${suffix}`, `${d.withExt}${suffix}`]);
+			pairs.push([`${s.stem}${suffix}`, `${d.stem}${suffix}`]);
+		}
+		return pairs;
+	}
+
+	/** 撤销 {@link importVaultBooks} 的一次导入（逆序执行 steps）。 */
+	async undoImport(result: VaultImportResult): Promise<boolean> {
+		let ok = true;
+		for (const step of [...result.steps].reverse()) {
+			try {
+				if (step.kind === "created" && step.path) {
+					await this.adapter.remove(step.path);
+				} else if (step.kind === "renamed" && step.from && step.to) {
+					await this.adapter.rename(step.to, step.from);
+				}
+			} catch {
+				ok = false;
+			}
+		}
+		return ok;
+	}
+
+	/** 路径是否在书库目录内（**前缀判定**，不依赖层级数，兼容自定义书架目录）。 */
+	isInsideLibrary(path: string): boolean {
+		const lib = `${this.normalize(this.libraryDir).replace(/\/+$/, "")}/`;
+		return this.normalize(path).startsWith(lib);
+	}
+
 	async deleteBook(vaultPath: string): Promise<void> {
 		await this.adapter.remove(vaultPath);
 	}
@@ -289,6 +413,11 @@ export class BookshelfService {
 		if (path === b) return "";
 		const prefix = b + "/";
 		return path.startsWith(prefix) ? path.slice(prefix.length) : "";
+	}
+
+	/** 统一的 vault 路径规范化（正反斜杠、多余斜杠、首尾斜杠）。 */
+	private normalize(p: string): string {
+		return this.join(p ?? "");
 	}
 
 	private join(...parts: string[]): string {

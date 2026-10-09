@@ -15,6 +15,7 @@ import { PromptModal } from "./components/PromptModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { BOOKSHELF_MODE_LABEL, BookshelfDisplayMode, DEFAULT_BOOKSHELF_DIR } from "../settings";
 import readerIcon from "../assets/reader.png";
+import { parseVaultDropPaths } from "../utils/drop-paths";
 
 const SORT_OPTIONS: Array<{ value: BookshelfSort; label: string }> = [
 	{ value: "recent", label: "最近阅读" },
@@ -412,9 +413,21 @@ export class BookshelfView extends ItemView {
 		card.setAttribute("draggable", "true");
 		card.addEventListener("dragstart", (e) => {
 			this.draggingBookPath = path;
-			e.dataTransfer?.setData("application/x-nyareader-book", path);
-			e.dataTransfer?.setData("text/plain", path);
-			if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+			const dt = e.dataTransfer;
+			if (dt) {
+				// 内部拖动：我们自己的 MIME（书架内移动）
+				dt.setData("application/x-nyareader-book", path);
+				// **拖出到 Obsidian 左侧文件列表**：Obsidian 的文件树按"vault 路径"
+				// 处理外部拖入，所以这里必须给纯路径（text/plain），不要包 JSON。
+				dt.setData("text/plain", path);
+				// 常见编辑器/文件树还认 uri-list（同样给相对路径，避免被当成外部 URL）
+				try {
+					dt.setData("text/uri-list", path);
+				} catch {
+					/* 某些环境不支持该类型，忽略 */
+				}
+				dt.effectAllowed = "copyMove";
+			}
 			card.addClass("is-dragging");
 		});
 		card.addEventListener("dragend", (e) => {
@@ -514,27 +527,96 @@ export class BookshelfView extends ItemView {
 			e.preventDefault();
 			e.stopPropagation();
 			zone.removeClass("nyareader-drag-over");
-			const folderDrag = e.dataTransfer?.getData("application/x-nyareader-folder") || this.draggingFolder || "";
+			const dt = e.dataTransfer;
+			// 我们自己的内部拖动（文件夹排序 / 书移动）：优先，语义是"移动"，不走收书
+			const folderDrag = dt?.getData("application/x-nyareader-folder") || this.draggingFolder || "";
 			if (folderDrag) {
 				this.draggingFolder = null;
 				this.dropHandled = true;
 				if (folderDrag !== folderRel && libraryRel === this.currentLibrary) void this.reorderFolders(folderDrag, folderRel);
 				return;
 			}
-			const bookPath = e.dataTransfer?.getData("application/x-nyareader-book") || this.draggingBookPath || "";
+			const bookPath = dt?.getData("application/x-nyareader-book") || this.draggingBookPath || "";
 			if (bookPath) {
 				this.draggingBookPath = null;
 				this.dropHandled = true;
 				void this.moveBook(bookPath, libraryRel, folderRel);
 				return;
 			}
-			void this.importDropped(e.dataTransfer?.files, libraryRel, folderRel);
+			// 系统文件管理器拖入：有 files，按二进制导入
+			if (dt?.files?.length) {
+				void this.importDropped(dt.files, libraryRel, folderRel);
+				return;
+			}
+			// Obsidian 文件栏拖入：**不通过 files**，要把 vault 里已有的书收进书库
+			void this.importFromVaultDrop(dt, libraryRel, folderRel);
 		});
 	}
 
+	/**
+	 * 从 Obsidian 文件栏拖进来的书 → 收进书库（**移动**语义）。
+	 *
+	 * Obsidian 没有公开它内部拖放的载荷格式，所以用 {@link parseVaultDropPaths}
+	 * 兼容多种形态（text/plain 路径、JSON、自定义 MIME），并用 vault 校验兜底 ——
+	 * 只有"确实存在且是电子书"的候选才会被处理，绝不会误搬无关文件。
+	 */
+	private async importFromVaultDrop(dt: DataTransfer | null, libraryRel: string, folderRel: string): Promise<void> {
+		if (!dt) return;
+		const byType: Record<string, string | undefined> = {};
+		const types = Array.from(dt.types ?? []);
+		for (const type of types) {
+			try {
+				byType[type] = dt.getData(type);
+			} catch {
+				byType[type] = undefined;
+			}
+		}
+		// 真实载荷打进控制台：万一遇到没覆盖的格式，一眼就能看出它长什么样
+		console.debug("[NyaReader] 拖放载荷", { types, byType });
+		const vault = this.plugin.app.vault;
+		const candidates = parseVaultDropPaths({ byType, types }, (p) => vault.getAbstractFileByPath(p) instanceof TFile);
+		if (!candidates.length) {
+			new Notice("NyaReader：没识别到可导入的电子书（支持 epub/pdf/mobi/azw3/txt）。", 5000);
+			return;
+		}
+		const { imported, results } = await this.service.importVaultBooks(candidates, libraryRel, folderRel, "move");
+		if (!imported) {
+			const why = results.find((r) => r.error)?.error;
+			new Notice(`NyaReader：没有导入任何书${why ? `（${why}）` : ""}。`, 5000);
+			return;
+		}
+		void this.render();
+		new Notice(`NyaReader：已收进书库 ${imported} 本。`, 4000);
+	}
+
 	private attachRootDragFallback(): void {
+		// 书架根节点：拖到空白处不做事，但要 preventDefault 才能收到 drop（避免浏览器直接打开文件）
 		this.rootEl.addEventListener("dragover", (e) => e.preventDefault());
-		this.rootEl.addEventListener("drop", (e) => e.preventDefault());
+		this.rootEl.addEventListener("drop", (e) => {
+			e.preventDefault();
+			const dt = e.dataTransfer;
+			// 空白处放下：落到当前书库的「未分类」文件夹（这是最符合直觉的默认去处）
+			if (this.draggingBookPath || dt?.getData("application/x-nyareader-book")) {
+				const book = dt?.getData("application/x-nyareader-book") || this.draggingBookPath || "";
+				this.draggingBookPath = null;
+				if (book && !this.dropHandled) {
+					void this.moveBook(book, this.currentLibrary, this.defaultFolderFor(this.currentLibrary));
+				}
+				return;
+			}
+			if (dt?.files?.length) {
+				void this.importDropped(dt.files, this.currentLibrary, this.defaultFolderFor(this.currentLibrary));
+				return;
+			}
+			void this.importFromVaultDrop(dt, this.currentLibrary, this.defaultFolderFor(this.currentLibrary));
+		});
+	}
+
+	/** 空白处放下时的默认文件夹：优先「未分类」，否则第一个文件夹，都没有就新建一个。 */
+	private defaultFolderFor(libraryRel: string): string {
+		const folders = this.orderedFolders(libraryRel);
+		const existing = folders.find((f) => f.relPath === "未分类") ?? folders[0];
+		return existing?.relPath ?? "未分类";
 	}
 
 	private async importDropped(files: FileList | undefined, libraryRel: string, folderRel: string): Promise<void> {
