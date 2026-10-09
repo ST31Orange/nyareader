@@ -416,6 +416,20 @@ export class PdfEngine implements IReaderEngine {
 	}
 
 	/**
+	 * 连续滚动模式：↑/↓ 滚一小格（约 3 行的高度）。
+	 *
+	 * 与 `HtmlDocEngine`/`TxtEngine` 保持同一手感约定：
+	 * ↑/↓ = 小格滚动，←/→ 与 PgUp/PgDn = 翻一屏。
+	 * 没有这个方法时，键盘路由到 `scrollStep?.()` 会静默失败（"按了没反应"）。
+	 */
+	scrollStep(direction: 1 | -1): void {
+		if (!this.container) return;
+		// 3 行 ≈ 当前字号 × 行距；PDF 没有行距设置，用 1.6 倍的 16px 基准近似
+		const step = Math.max(48, Math.round(16 * 1.6 * 3));
+		this.container.scrollBy({ top: direction * step, behavior: "auto" });
+	}
+
+	/**
 	 * 重排所有页面：更新缩放、清空渲染、尺寸与纵向偏移。
 	 * keepAnchor=true 时保持当前阅读位置在缩放前后视觉上不跳。
 	 *
