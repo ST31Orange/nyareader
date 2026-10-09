@@ -27,6 +27,8 @@ const context = await esbuild.context({
 	banner: { js: banner, css: banner },
 	entryPoints: ["src/main.ts"],
 	bundle: true,
+	// 图片内联为 data URL（书架设置按钮乌鸦图、打赏二维码）
+	loader: { ".jpg": "dataurl", ".jpeg": "dataurl", ".png": "dataurl", ".svg": "dataurl" },
 	external: [
 		"obsidian",
 		"electron",

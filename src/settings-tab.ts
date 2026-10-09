@@ -5,6 +5,8 @@
  */
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type NyaReaderPlugin from "./main";
+import alipayIcon from "./assets/donate-alipay.jpg";
+import wechatIcon from "./assets/donate-wechat.jpg";
 
 export class NyaReaderSettingTab extends PluginSettingTab {
 	constructor(
@@ -18,6 +20,10 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 		containerEl.createEl("h2", { text: "NyaReader 设置" });
+		containerEl.createEl("p", {
+			cls: "nyareader-settings-intro",
+			text: "NyaReader 是一个开箱即用的本地电子书阅读器，支持 EPUB / PDF / MOBI / AZW3 / TXT。书架管理、分页/滚动与单页/双页阅读、主题与版式调节、划词翻译（NyaLingo）和高亮批注都包含在内，所有数据都保存在你自己的库里。",
+		});
 
 		// ---------- 阅读 ----------
 		containerEl.createEl("h3", { text: "阅读" });
@@ -116,5 +122,21 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 					})
 				);
 		}
+
+		// ---------- 支持与反馈 ----------
+		containerEl.createEl("h3", { text: "支持我们" });
+		containerEl.createEl("p", { cls: "nyareader-hint", text: "如果 NyaReader 对你有帮助，欢迎打赏支持作者；你的支持会用于后续维护、修 bug 和适配新功能。" });
+		const donateRow = containerEl.createDiv({ cls: "nyareader-donate-row" });
+		const mkDonate = (img: string, label: string): void => {
+			const box = donateRow.createDiv({ cls: "nyareader-donate-box" });
+			box.createEl("img", { attr: { src: img, alt: label } });
+			box.createEl("span", { text: label });
+		};
+		mkDonate(alipayIcon, "支付宝");
+		mkDonate(wechatIcon, "微信");
+
+		containerEl.createEl("h3", { text: "反馈" });
+		const feedback = containerEl.createDiv({ cls: "nyareader-feedback" });
+		feedback.innerHTML = `如果您在使用过程中遇到任何问题，或有任何意见与建议，欢迎发送邮件至 <a href="mailto:nyaspace@163.com">nyaspace@163.com</a> 进行反馈。请在邮件中尽量附上问题描述、复现步骤及相关截图，以便我们更快定位和处理。感谢您的支持与反馈！`;
 	}
 }

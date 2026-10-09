@@ -14,6 +14,7 @@ import { BOOKSHELF_VIEW_TYPE } from "./BookshelfViewTypes";
 import { PromptModal } from "./components/PromptModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { BOOKSHELF_MODE_LABEL, BookshelfDisplayMode } from "../settings";
+import readerIcon from "../assets/reader.png";
 
 const SORT_OPTIONS: Array<{ value: BookshelfSort; label: string }> = [
 	{ value: "recent", label: "最近阅读" },
@@ -139,7 +140,12 @@ export class BookshelfView extends ItemView {
 		// 顶部栏
 		const header = this.rootEl.createDiv({ cls: "nyareader-shelf-header" });
 		const title = header.createDiv({ cls: "nyareader-shelf-title" });
-		title.createEl("h2", { text: "我的书架" });
+		// 乌鸦看书图片 -> 打开 NyaReader 设置，位于「我的书架」左侧
+		const titleRow = title.createDiv({ cls: "nyareader-shelf-title-row" });
+		const settingsBtn = titleRow.createEl("button", { cls: "nyareader-shelf-settings-btn", attr: { title: "NyaReader 设置", "aria-label": "NyaReader 设置" } });
+		settingsBtn.createEl("img", { attr: { src: readerIcon, alt: "" } });
+		settingsBtn.addEventListener("click", () => this.plugin.openSettings());
+		titleRow.createEl("h2", { text: "我的书架" });
 		title.createEl("span", { cls: "nyareader-shelf-sub", text: `${this.folders.reduce((n, f) => n + f.books.length, 0)} 本书` });
 
 		const actions = header.createDiv({ cls: "nyareader-shelf-actions" });

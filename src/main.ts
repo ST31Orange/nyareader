@@ -217,6 +217,13 @@ export default class NyaReaderPlugin extends Plugin {
 		this.app.workspace.revealLeaf(leaf);
 	}
 
+	/** 打开本插件设置界面（书架设置按钮用）。 */
+	openSettings(): void {
+		const setting = (this.app as unknown as { setting?: { open?: () => void; openTabById?: (id: string) => void } }).setting;
+		setting?.open?.();
+		window.setTimeout(() => setting?.openTabById?.("nyareader"), 60);
+	}
+
 	/** 首次运行：NyaLingo 未安装时自动"捎带安装"（失败则提示手动安装）。 */
 	private async maybePromptLingo(): Promise<void> {
 		this.settings.translationPromptShown = true;
