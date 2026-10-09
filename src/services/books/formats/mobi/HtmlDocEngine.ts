@@ -304,6 +304,8 @@ export class HtmlDocEngine implements IReaderEngine {
 	private chapters: ChapterSlot[] = [];
 	/** 最近一次 `goTo("#锚点")` 的解析诊断（排查"目录跳转静默失效"用） */
 	private lastAnchorResolve: AnchorResolveDiag | null = null;
+	/** 最近一次划词生成锚点的诊断（排查"结构区间缺失 → 只能靠指纹搜索"用） */
+	private lastSelectionDiag: Record<string, unknown> = {};
 	/** 窗口切换轨迹（诊断用；只保留最近若干次） */
 	private windowTrace: Array<{ from: number; to: number; active: number; stack: string }> = [];
 	/** 每章的测量缓存（与 chapters 等长；fingerprint 不匹配视为未测） */
@@ -375,6 +377,7 @@ export class HtmlDocEngine implements IReaderEngine {
 		pages: number;
 		lastAnchorResolve: AnchorResolveDiag | null;
 		windowTrace: Array<{ from: number; to: number; active: number; stack: string }>;
+		lastSelectionDiag: Record<string, unknown>;
 	} {
 		return {
 			lastRelayoutMs: Math.round(this.lastRelayoutMs),
@@ -383,6 +386,7 @@ export class HtmlDocEngine implements IReaderEngine {
 			pages: this.pages,
 			lastAnchorResolve: this.lastAnchorResolve,
 			windowTrace: this.windowTrace.slice(),
+			lastSelectionDiag: this.lastSelectionDiag,
 		};
 	}
 
@@ -2164,14 +2168,32 @@ export class HtmlDocEngine implements IReaderEngine {
 		const startRegion = this.regionOfNode(range.startContainer);
 		const endRegion = this.regionOfNode(range.endContainer) ?? startRegion;
 		const progression = this.currentPercentage();
+		// 诊断：记录选区结构信息（排查"结构区间缺失导致只能靠指纹搜索"）
+		this.lastSelectionDiag = {
+			selText: text,
+			startRegionKey: startRegion?.key ?? null,
+			endRegionKey: endRegion?.key ?? null,
+			startNodeType: range.startContainer.nodeType,
+			startOffset: range.startOffset,
+			endOffset: range.endOffset
+		};
 		if (!startRegion) {
 			// 结构信息缺失（例如选区落在非正文节点上）：只给指纹 + 进度
 			return { kind: "chapter", primary: this.currentLocation(), quote: quoteFromText(text), progression, text, approximate: true };
 		}
 		const regionText = startRegion.nodes.map((n) => n.textContent ?? "").join("");
 		const charStart = this.offsetInNodes(startRegion, range.startContainer, range.startOffset);
-		const sameRegion = endRegion === startRegion;
+		// ⚠️ 必须按 **key** 比较而不是对象引用：`regionOfNode()` 每次都新建区域对象，
+		// 用 `===` 会恒为 false → charEnd 永远拿不到 → 结构定位整体失效，
+		// 只能退回"按文本指纹搜索"，一旦书里有重复句子就会飘到别处（用户实测到的问题）。
+		const sameRegion = endRegion !== null && endRegion.key === startRegion.key;
 		const charEnd = sameRegion ? this.offsetInNodes(startRegion, range.endContainer, range.endOffset) : null;
+		this.lastSelectionDiag.regionTextLen = regionText.length;
+		this.lastSelectionDiag.charStart = charStart;
+		this.lastSelectionDiag.charEnd = charEnd;
+		this.lastSelectionDiag.sliceAtCharRange =
+			charStart !== null && charEnd !== null ? regionText.slice(charStart, charEnd) : null;
+		this.lastSelectionDiag.sameRegion = sameRegion;
 		const quote =
 			charStart !== null && charEnd !== null && charEnd > charStart
 				? buildTextQuote(regionText, charStart, charEnd)
@@ -2186,6 +2208,11 @@ export class HtmlDocEngine implements IReaderEngine {
 		if (charStart !== null && charEnd !== null && charEnd > charStart) {
 			draft.charStart = charStart;
 			draft.charEnd = charEnd;
+		} else if (charStart !== null) {
+			// 跨区域选区（或同一区域内 end 解析失败）：**至少保留起点**。
+			// 起点能把"多处重复的句子"钉到正确的那一处；整段丢弃等于放弃结构定位。
+			draft.charStart = charStart;
+			draft.approximate = true;
 		}
 		draft.paraIndex = startRegion.paraIndex;
 		if (charStart === null) draft.approximate = true;

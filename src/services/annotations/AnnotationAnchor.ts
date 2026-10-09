@@ -319,6 +319,38 @@ function stripWhitespace(input: string): string {
 	return out;
 }
 
+/**
+ * 把**原文偏移**换算成**归一化下标**（`normalizeWithIndex` 的反向查找）。
+ *
+ * 为什么需要：锚点里的 `charStart` 是原文（DOM `Range`）偏移，而归一化下标会因为
+ * 空白折叠/零宽字符丢弃而变短。要把"起点提示"用于指纹比对，必须先换算，
+ * 否则会把原文偏移当成归一化下标去切片，命中位置整体偏移。
+ *
+ * 落在被折叠空白内部的偏移 → 返回其后的第一个归一化下标（等价"跳过空白"）；
+ * 超出范围返回 null（调用方退回纯指纹搜索）。
+ */
+export function rawOffsetToNormalizedOffset(norm: NormalizedText, rawOffset: number): number | null {
+	if (!Number.isFinite(rawOffset) || rawOffset < 0) return null;
+	if (norm.starts.length === 0) return null;
+	// starts 单调不减：找第一个起点 >= rawOffset 的下标
+	let lo = 0;
+	let hi = norm.starts.length - 1;
+	let ans = -1;
+	while (lo <= hi) {
+		const mid = (lo + hi) >> 1;
+		if (norm.starts[mid] >= rawOffset) {
+			ans = mid;
+			hi = mid - 1;
+		} else {
+			lo = mid + 1;
+		}
+	}
+	if (ans >= 0) return ans;
+	// 所有归一化字符都在这之前：若落在最后一个字符的原文区间内，算作末尾
+	const last = norm.starts.length - 1;
+	return rawOffset <= norm.ends[last] ? last + 1 : null;
+}
+
 /** 指纹命中候选（归一化坐标系；`via` 记录是精确命中还是忽略空白后的命中）。 */
 interface QuoteHit {
 	normStart: number;
@@ -329,8 +361,7 @@ interface QuoteHit {
 /** 「去空白」匹配要求的最短指纹长度（低于它不做忽略空白匹配，避免误命中）。 */
 export const MIN_COMPACT_QUOTE_LENGTH = 4;
 
-/** a 的末尾与 b（前者前缀、后者前文）的最长公共长度。 */
-function commonSuffixLen(a: string, b: string): number {
+/** a 的末尾与 b（前者前缀、后者前文）的最长公共长度。 */function commonSuffixLen(a: string, b: string): number {
 	let n = 0;
 	const max = Math.min(a.length, b.length);
 	while (n < max && a[a.length - 1 - n] === b[b.length - 1 - n]) n++;
@@ -431,6 +462,24 @@ export function locateInText(text: string, anchor: AnnotationAnchor, opts: Locat
 		const rangeFromNorm = (s: number, e: number): { start: number; end: number } => ({ start: norm.starts[s], end: norm.ends[e] });
 		const compact = compactIndexOf(norm);
 		const needleCompact = stripWhitespace(exact);
+		// 2a) **起点提示**：跨区域选区只存了 charStart。若该位置起的文本恰好等于指纹，
+		//     直接采用 —— 否则"书里有多处相同句子"时会按打分取错位置（用户实测到的问题）。
+		//     注意 charStart 是**原文**偏移，必须换算到归一化坐标系再比对。
+		if (typeof start === "number" && Number.isInteger(start) && start >= 0 && start <= text.length && end === undefined) {
+			const at = rawOffsetToNormalizedOffset(norm, start);
+			if (at !== null && norm.text.startsWith(exact, at)) {
+				const { start: s, end: e } = rangeFromNorm(at, at + exact.length - 1);
+				return {
+					...base,
+					quality: "exact-range",
+					approximate: false,
+					reason: "结构定位（选区起点）命中，且与文本指纹一致",
+					start: s,
+					end: e,
+					matchedText: text.slice(s, e),
+				};
+			}
+		}
 		const collect = (): QuoteHit[] => {
 			const hits: QuoteHit[] = [];
 			for (const at of allOccurrences(norm.text, exact)) {

@@ -1,0 +1,98 @@
+{
+  "checks": [
+    {
+      "name": "划词生成了结构锚点（charStart/charEnd 存在）",
+      "pass": true
+    },
+    {
+      "name": "锚点指纹 exact == 选中文本",
+      "pass": true
+    },
+    {
+      "name": "首次绘制覆盖的文本 == 选中文本",
+      "pass": true
+    },
+    {
+      "name": "改字号后仍覆盖同一句",
+      "pass": true
+    },
+    {
+      "name": "切分页/滚动往返后仍覆盖同一句",
+      "pass": true
+    },
+    {
+      "name": "placement 为精确命中（非 approximate）",
+      "pass": true
+    }
+  ],
+  "pass": true,
+  "numbers": {
+    "selectedText": "高亮定位必须精确命中这一句",
+    "target": "高亮定位必须精确命中这一句",
+    "draftCharStart": 257,
+    "draftCharEnd": 270,
+    "draftPrimary": "nyareader-epub-0",
+    "quoteExact": "高亮定位必须精确命中这一句",
+    "regionDiagnostic": {
+      "regionCount": 1,
+      "regionKeys": [
+        "nyareader-epub-0"
+      ],
+      "nodeCount": 5,
+      "regionTextLen": 444,
+      "sliceAtCharRange": "高亮定位必须精确命中这一句"
+    },
+    "diag2": {
+      "startContainerType": 3,
+      "startContainerParentTag": "P",
+      "startContainerParentIsParagraph": true,
+      "startOffset": 146,
+      "endOffset": 159,
+      "startInDoc": true,
+      "paragraphIndexInQueried": 1,
+      "paragraphCount": 3,
+      "firstParaTextLen": 109,
+      "secondParaHasTarget": true
+    },
+    "engineDiag": {
+      "selText": "高亮定位必须精确命中这一句",
+      "startRegionKey": "nyareader-epub-0",
+      "endRegionKey": "nyareader-epub-0",
+      "startNodeType": 3,
+      "startOffset": 146,
+      "endOffset": 159,
+      "regionTextLen": 444,
+      "charStart": 257,
+      "charEnd": 270,
+      "sliceAtCharRange": "高亮定位必须精确命中这一句",
+      "sameRegion": true
+    },
+    "roundTripCharStart": 257,
+    "roundTripCharEnd": 270,
+    "painted": [
+      {
+        "name": "nyar-hl-yellow",
+        "text": "高亮定位必须精确命中这一句"
+      }
+    ],
+    "paintedAfterFont": [
+      {
+        "name": "nyar-hl-yellow",
+        "text": "高亮定位必须精确命中这一句"
+      }
+    ],
+    "paintedAfterMode": [
+      {
+        "name": "nyar-hl-yellow",
+        "text": "高亮定位必须精确命中这一句"
+      }
+    ],
+    "placement": {
+      "id": "h1",
+      "quality": "exact-range",
+      "approximate": false,
+      "reason": "结构定位（章节/段落字符区间）直接命中",
+      "rendered": true
+    }
+  }
+}
