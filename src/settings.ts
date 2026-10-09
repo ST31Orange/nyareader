@@ -37,6 +37,8 @@ export interface NyaReaderSettings {
 	translationPromptShown: boolean;
 	/** 书架各区域的卡片显示模式：区域相对路径 -> 模式 */
 	bookshelfModes: Record<string, BookshelfDisplayMode>;
+	/** 书架各区域是否折叠：区域相对路径 -> 折叠 */
+	bookshelfCollapsed: Record<string, boolean>;
 	/** 批注侧车文件名后缀 */
 	annotationSidecarSuffix: string;
 }
@@ -66,6 +68,7 @@ export const DEFAULT_SETTINGS: NyaReaderSettings = {
 	ui: { ...DEFAULT_UI_SETTINGS },
 	translationPromptShown: false,
 	bookshelfModes: {},
+	bookshelfCollapsed: {},
 	annotationSidecarSuffix: ".annotations",
 };
 
@@ -92,6 +95,7 @@ export function normalizeSettings(raw: unknown): NyaReaderSettings {
 			targetLanguage: strOr(t.targetLanguage, DEFAULT_TRANSLATION_SETTINGS.targetLanguage),
 		},
 		bookshelfModes: sanitizeBookshelfModes(v.bookshelfModes),
+		bookshelfCollapsed: sanitizeBookshelfCollapsed(v.bookshelfCollapsed),
 		ui: {
 			translationPanelWidth: clamp(Number(u.translationPanelWidth), 240, 760, DEFAULT_UI_SETTINGS.translationPanelWidth),
 		},
@@ -106,6 +110,16 @@ export function sanitizeBookshelfModes(raw: unknown): Record<string, BookshelfDi
 	const out: Record<string, BookshelfDisplayMode> = {};
 	for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
 		if (v === "full" || v === "compact" || v === "list") out[k] = v;
+	}
+	return out;
+}
+
+/** 只保留布尔折叠值。 */
+export function sanitizeBookshelfCollapsed(raw: unknown): Record<string, boolean> {
+	if (!raw || typeof raw !== "object") return {};
+	const out: Record<string, boolean> = {};
+	for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+		if (typeof v === "boolean") out[k] = v;
 	}
 	return out;
 }

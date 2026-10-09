@@ -165,19 +165,29 @@ export class BookshelfView extends ItemView {
 		// 区域网格
 		const grid = this.rootEl.createDiv({ cls: "nyareader-shelf-grid" });
 		for (const folder of this.folders) {
+			const collapsed = this.isCollapsed(folder.relPath);
 			const zone = grid.createDiv({ cls: "nyareader-shelf-zone" });
+			if (collapsed) zone.addClass("is-collapsed");
 			zone.setAttribute("data-rel", folder.relPath);
 			const zoneHeader = zone.createDiv({ cls: "nyareader-shelf-zone-header" });
-			zoneHeader.createEl("h3", { text: folder.name });
+			// 标题 + 折叠按钮
+			const titleWrap = zoneHeader.createDiv({ cls: "nyareader-shelf-zone-title" });
+			titleWrap.createEl("h3", { text: folder.name });
+			const collapseBtn = titleWrap.createEl("button", {
+				cls: "nyareader-shelf-collapse",
+				attr: { title: collapsed ? "展开区域" : "折叠区域" },
+			});
+			setIcon(collapseBtn, collapsed ? "chevron-right" : "chevron-down");
+			collapseBtn.addEventListener("click", () => void this.toggleCollapse(folder.relPath));
 			const mode = this.modeFor(folder.relPath);
 			zoneHeader.createEl("button", {
 				text: `显示：${BOOKSHELF_MODE_LABEL[mode]}`,
 				cls: "nyareader-shelf-mode-btn",
 				attr: { title: "切换卡片显示模式（完整 / 紧凑 / 列表），仅对本区域生效" },
 			}).addEventListener("click", () => void this.cycleMode(folder.relPath));
-			const zoneActions = zone.createDiv({ cls: "nyareader-shelf-zone-actions" });
+			// 右上角小删除按钮（根目录"全部书籍"不可删）
 			if (folder.relPath) {
-				zoneActions.createEl("button", { text: "删除区域", cls: "nyareader-shelf-link" }).addEventListener("click", () => void this.deleteFolder(folder.relPath));
+				zone.createEl("button", { text: "✕", cls: "nyareader-shelf-zone-del", attr: { title: "删除区域" } }).addEventListener("click", () => void this.deleteFolder(folder.relPath));
 			}
 			const cards = zone.createDiv({ cls: "nyareader-shelf-cards" });
 			if (mode === "list") cards.addClass("is-list");
@@ -195,6 +205,18 @@ export class BookshelfView extends ItemView {
 	/** 当前区域显示模式（默认完整卡片）。 */
 	private modeFor(relPath: string): BookshelfDisplayMode {
 		return this.plugin.settings.bookshelfModes[relPath] ?? "full";
+	}
+
+	/** 区域是否已折叠。 */
+	private isCollapsed(relPath: string): boolean {
+		return this.plugin.settings.bookshelfCollapsed[relPath] === true;
+	}
+
+	/** 切换区域折叠并持久化。 */
+	private async toggleCollapse(relPath: string): Promise<void> {
+		this.plugin.settings.bookshelfCollapsed[relPath] = !this.isCollapsed(relPath);
+		await this.plugin.saveSettings();
+		void this.render();
 	}
 
 	/** 循环切换模式并持久化到设置。 */
