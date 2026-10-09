@@ -39,6 +39,8 @@ export interface NyaReaderSettings {
 	bookshelfModes: Record<string, BookshelfDisplayMode>;
 	/** 书架各区域是否折叠：区域相对路径 -> 折叠 */
 	bookshelfCollapsed: Record<string, boolean>;
+	/** 书架根目录（vault 相对路径）。 */
+	bookshelfDir: string;
 	/** 书库顺序（书库相对路径数组，手动拖动调序） */
 	bookshelfLibraryOrder: string[];
 	/** 每个书库内的文件夹顺序：书库相对路径 -> 文件夹相对路径数组 */
@@ -60,6 +62,9 @@ export const DEFAULT_UI_SETTINGS: ReaderUiSettings = {
 	translationPanelWidth: 320,
 };
 
+/** 书架根目录默认位置（vault 相对路径）。 */
+export const DEFAULT_BOOKSHELF_DIR = "nyareader/library";
+
 export const DEFAULT_SETTINGS: NyaReaderSettings = {
 	bookOverrides: {},
 	reader: {
@@ -77,6 +82,7 @@ export const DEFAULT_SETTINGS: NyaReaderSettings = {
 	translationPromptShown: false,
 	bookshelfModes: {},
 	bookshelfCollapsed: {},
+	bookshelfDir: DEFAULT_BOOKSHELF_DIR,
 	bookshelfLibraryOrder: [],
 	bookshelfFolderOrder: {},
 	bookshelfSelectedLibrary: "",
@@ -108,6 +114,7 @@ export function normalizeSettings(raw: unknown): NyaReaderSettings {
 		},
 		bookshelfModes: sanitizeBookshelfModes(v.bookshelfModes),
 		bookshelfCollapsed: sanitizeBookshelfCollapsed(v.bookshelfCollapsed),
+		bookshelfDir: typeof v.bookshelfDir === "string" && v.bookshelfDir ? v.bookshelfDir : DEFAULT_BOOKSHELF_DIR,
 		bookshelfLibraryOrder: arrayOfStrings(v.bookshelfLibraryOrder),
 		bookshelfFolderOrder: sanitizeFolderOrder(v.bookshelfFolderOrder),
 		bookshelfSelectedLibrary: strOr(v.bookshelfSelectedLibrary, ""),

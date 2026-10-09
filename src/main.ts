@@ -148,7 +148,8 @@ export default class NyaReaderPlugin extends Plugin {
 		}
 		// 复制到当前（或默认）书库的「未分类」文件夹——新模型里书必须放在文件夹里
 		const library = this.settings.bookshelfSelectedLibrary || "我的书库";
-		const dir = `nyareader/library/${library}/未分类`;
+		const shelfDir = this.settings.bookshelfDir || "nyareader/library";
+		const dir = `${shelfDir}/${library}/未分类`;
 		await this.mkdirpVault(dir);
 		const destPath = await this.uniqueBookPath(dir, file.name);
 		await this.app.vault.createBinary(destPath, buf);

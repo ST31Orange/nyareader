@@ -6,10 +6,11 @@
 import { App, Notice, PluginSettingTab, Setting, TFolder } from "obsidian";
 import type NyaReaderPlugin from "./main";
 import { ConfirmModal } from "./view/components/ConfirmModal";
+import { PromptModal } from "./view/components/PromptModal";
 import alipayIcon from "./assets/donate-alipay.jpg";
 import wechatIcon from "./assets/donate-wechat.jpg";
 
-const BOOKSHELF_DIR = "nyareader/library";
+import { DEFAULT_BOOKSHELF_DIR } from "./settings";
 
 export class NyaReaderSettingTab extends PluginSettingTab {
 	constructor(
@@ -67,7 +68,50 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 
 		// ---------- 书库管理（删除书库放在设置里） ----------
 		containerEl.createEl("h3", { text: "书库管理" });
-		const shelfRoot = this.plugin.app.vault.getAbstractFileByPath(BOOKSHELF_DIR);
+		const shelfDir = this.plugin.settings.bookshelfDir || DEFAULT_BOOKSHELF_DIR;
+		new Setting(containerEl)
+			.setName("书架位置")
+			.setDesc(`当前：${shelfDir}。迁移会把整个书架目录（含所有书库/文件夹/书）移动到新的位置。`)
+			.addButton((b) =>
+				b.setButtonText("迁移…").onClick(() => {
+					new PromptModal(this.app, {
+						title: "迁移书架位置",
+						placeholder: "新的书架目录（vault 相对路径）",
+						initialValue: shelfDir,
+						submitText: "迁移",
+						onSubmit: async (value) => {
+							const target = value.trim().replace(/^\/+|\/+$/g, "");
+							if (!target || target === shelfDir) return;
+							if (target.startsWith(`${shelfDir}/`)) {
+								new Notice("NyaReader：不能把书架迁移到它自己的子目录里。");
+								return;
+							}
+							const src = this.plugin.app.vault.getAbstractFileByPath(shelfDir);
+							if (!(src instanceof TFolder)) {
+								new Notice("NyaReader：找不到当前书架目录，无法迁移。");
+								return;
+							}
+							if (this.plugin.app.vault.getAbstractFileByPath(target)) {
+								new Notice("NyaReader：目标位置已存在，请换一个路径。");
+								return;
+							}
+							const idx = target.lastIndexOf("/");
+							if (idx > 0) await this.mkdirpVault(target.slice(0, idx));
+							await this.plugin.app.vault.rename(src, target);
+							const oldPrefix = `${shelfDir}/`;
+							const newPrefix = `${target}/`;
+							for (const e of this.plugin.bookIndex.list()) {
+								if (e.path.startsWith(oldPrefix)) await this.plugin.bookIndex.upsert({ ...e, path: e.path.replace(oldPrefix, newPrefix) });
+							}
+							this.plugin.settings.bookshelfDir = target;
+							await this.plugin.saveSettings();
+							new Notice(`NyaReader：书架已迁移到「${target}」。`);
+							this.display();
+						},
+					}).open();
+				})
+			);
+		const shelfRoot = this.plugin.app.vault.getAbstractFileByPath(shelfDir);
 		const libraries = shelfRoot instanceof TFolder ? shelfRoot.children.filter((c): c is TFolder => c instanceof TFolder) : [];
 		if (!libraries.length) {
 			containerEl.createEl("p", { cls: "nyareader-hint", text: "还没有书库。可在书架页用「＋ 新建书库」创建。" });
@@ -177,5 +221,15 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 		containerEl.createEl("h3", { text: "反馈" });
 		const feedback = containerEl.createDiv({ cls: "nyareader-feedback" });
 		feedback.innerHTML = `如果您在使用过程中遇到任何问题，或有任何意见与建议，欢迎发送邮件至 <a href="mailto:nyaspace@163.com">nyaspace@163.com</a> 进行反馈。请在邮件中尽量附上问题描述、复现步骤及相关截图，以便我们更快定位和处理。感谢您的支持与反馈！`;
+	}
+
+	/** 递归创建 vault 目录（迁移书架位置用）。 */
+	private async mkdirpVault(dir: string): Promise<void> {
+		const parts = dir.split("/").filter(Boolean);
+		let cur = "";
+		for (const part of parts) {
+			cur = cur ? `${cur}/${part}` : part;
+			if (!this.plugin.app.vault.getAbstractFileByPath(cur)) await this.plugin.app.vault.createFolder(cur).catch(() => undefined);
+		}
 	}
 }

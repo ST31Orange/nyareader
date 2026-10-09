@@ -13,7 +13,7 @@ import type { BookshelfFolder, BookshelfLibrary } from "../services/storage/Book
 import { BOOKSHELF_VIEW_TYPE } from "./BookshelfViewTypes";
 import { PromptModal } from "./components/PromptModal";
 import { ConfirmModal } from "./components/ConfirmModal";
-import { BOOKSHELF_MODE_LABEL, BookshelfDisplayMode } from "../settings";
+import { BOOKSHELF_MODE_LABEL, BookshelfDisplayMode, DEFAULT_BOOKSHELF_DIR } from "../settings";
 import readerIcon from "../assets/reader.png";
 
 const SORT_OPTIONS: Array<{ value: BookshelfSort; label: string }> = [
@@ -22,8 +22,6 @@ const SORT_OPTIONS: Array<{ value: BookshelfSort; label: string }> = [
 	{ value: "progress", label: "阅读进度" },
 ];
 
-/** 书架根目录（vault 相对路径）。 */
-export const BOOKSHELF_LIBRARY_DIR = "nyareader/library";
 /** 迁移时的默认书库名。 */
 const DEFAULT_LIBRARY = "我的书库";
 /** 迁移书库根目录散书时归入的文件夹名。 */
@@ -60,6 +58,11 @@ export class BookshelfView extends ItemView {
 
 	getIcon(): string {
 		return "library";
+	}
+
+	/** 当前书架根目录（可在设置里迁移），默认 nyareader/library。 */
+	private get shelfDir(): string {
+		return this.plugin.settings.bookshelfDir || DEFAULT_BOOKSHELF_DIR;
 	}
 
 	async onOpen(): Promise<void> {
@@ -105,7 +108,7 @@ export class BookshelfView extends ItemView {
 					await this.plugin.app.vault.rename(f, newPath);
 				},
 			},
-			BOOKSHELF_LIBRARY_DIR,
+			this.shelfDir,
 			(path) => {
 				const entry = this.plugin.bookIndex.list().find((e) => e.path === path);
 				if (!entry) return undefined;
@@ -134,12 +137,12 @@ export class BookshelfView extends ItemView {
 	private async migrateIfNeeded(): Promise<void> {
 		if (this.plugin.settings.bookshelfMigrated) return;
 		try {
-			const root = this.plugin.app.vault.getAbstractFileByPath(BOOKSHELF_LIBRARY_DIR);
+			const root = this.plugin.app.vault.getAbstractFileByPath(this.shelfDir);
 			if (root instanceof TFolder) {
 				const legacyFolders = root.children.filter((c): c is TFolder => c instanceof TFolder && c.name !== DEFAULT_LIBRARY);
 				const legacyFiles = root.children.filter((c): c is TFile => c instanceof TFile);
 				if (legacyFolders.length || legacyFiles.length) {
-					const defLibPath = `${BOOKSHELF_LIBRARY_DIR}/${DEFAULT_LIBRARY}`;
+					const defLibPath = `${this.shelfDir}/${DEFAULT_LIBRARY}`;
 					await this.vaultMkdirp(defLibPath);
 					const folderNames = legacyFolders.map((f) => f.name);
 					for (const f of legacyFolders) {
@@ -158,8 +161,8 @@ export class BookshelfView extends ItemView {
 					const legacyFolderSet = new Set(folderNames);
 					for (const entry of this.plugin.bookIndex.list()) {
 						const p = entry.path;
-						if (!p.startsWith(`${BOOKSHELF_LIBRARY_DIR}/`)) continue;
-						const rest = p.slice(BOOKSHELF_LIBRARY_DIR.length + 1);
+						if (!p.startsWith(`${this.shelfDir}/`)) continue;
+						const rest = p.slice(this.shelfDir.length + 1);
 						const seg = rest.split("/");
 						let newPath: string | null = null;
 						if (seg.length === 1) {
@@ -535,8 +538,8 @@ export class BookshelfView extends ItemView {
 					return;
 				}
 				// 更新索引路径前缀
-				const oldPrefix = `${BOOKSHELF_LIBRARY_DIR}/${rel}/`;
-				const newPrefix = `${BOOKSHELF_LIBRARY_DIR}/${newRel}/`;
+				const oldPrefix = `${this.shelfDir}/${rel}/`;
+				const newPrefix = `${this.shelfDir}/${newRel}/`;
 				for (const entry of this.plugin.bookIndex.list()) {
 					if (entry.path.startsWith(oldPrefix)) await this.plugin.bookIndex.upsert({ ...entry, path: entry.path.replace(oldPrefix, newPrefix) });
 				}
@@ -595,7 +598,7 @@ export class BookshelfView extends ItemView {
 			confirmText: "删除",
 			onConfirm: async () => {
 				await this.service.deleteFolder(lib, folderRel);
-				const prefix = `${BOOKSHELF_LIBRARY_DIR}/${lib}/${folderRel}/`;
+				const prefix = `${this.shelfDir}/${lib}/${folderRel}/`;
 				for (const e of this.plugin.bookIndex.list()) if (e.path.startsWith(prefix)) await this.plugin.bookIndex.remove(e.fingerprint);
 				new Notice("NyaReader：已删除文件夹。");
 				void this.render();

@@ -1,0 +1,8 @@
+feat(settings): 书库管理新增「书架位置」迁移（整个书架目录可搬家）(v0.4.1)
+
+- 设置页「书库管理」新增「书架位置」：显示当前路径 + 「迁移…」按钮，
+  可把整个书架目录（含所有书库/文件夹/书）移动到 vault 内新位置，
+  移动后同步更新书架索引路径并保存 settings.bookshelfDir
+- 书架根目录改为可配置：settings.bookshelfDir（默认 nyareader/library）；
+  BookshelfView / 打开电子书导入路径均改用它
+- 单测 102/102
