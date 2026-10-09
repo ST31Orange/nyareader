@@ -79,6 +79,11 @@ export class TxtEngine implements IReaderEngine {
 		return this.settings.scrollMode === false;
 	}
 
+	/** 对外：当前是否分页模式（键盘路由用：滚动模式下 ↑/↓ 是小格滚动）。 */
+	isPagedMode(): boolean {
+		return this.isPaged();
+	}
+
 	private paragraphs: string[] = [];
 	private chapters: TxtContent["chapters"] = [];
 	/** 每段高度（估算 -> 测量修正）；类型化数组避免 50 万段的堆分配峰值 */

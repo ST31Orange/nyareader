@@ -170,6 +170,15 @@ export interface IReaderEngine {
 	 * 避免把估计值当成精确值展示。
 	 */
 	isPageCountEstimated?(): boolean;
+	/**
+	 * 可选：当前是否处于**分页**模式（false = 连续滚动模式）。
+	 *
+	 * 为什么不能只看 `capabilities.pageNav`：`pageNav` 是"这个引擎是否**能**分页"的静态能力，
+	 * 而按键路由需要知道"**现在**是不是分页"。两者混用会让 EPUB/MOBI/AZW3 在滚动模式下
+	 * 把 ↑/↓ 当成翻页（因为它们的 pageNav 恒为 true），于是"逐行滚动"永远走不到。
+	 */
+	isPagedMode?(): boolean;
+
 	/** 可选：在滚动/分页模式间切换并保持当前阅读位置（文档式格式实现） */
 	switchMode?(scrollMode: boolean): void;
 	/** 可选：按方向键逐行滚动（滚动模式下 ↑/↓ 用；方向 1=向下，-1=向上） */

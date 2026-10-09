@@ -326,7 +326,10 @@ export class BookshelfView extends ItemView {
 		const span = bar.createEl("span", { cls: "nyareader-shelf-sub", text: `${this.folders.length} 个文件夹` });
 		void span;
 		// 排序控件放在"当前书库"这一行：它作用于书库内的书，与书库区对齐（用户要求从顶部挪下来）
-		const sortWrap = bar.createEl("label", { cls: "nyareader-shelf-sort-wrap" });
+		// 排序与「＋新建文件夹」包成**一组**并整体靠右：若两者各自用 auto margin，
+		// 浏览器的 flex 会把剩余空间**平分**，排序控件就停在中间（用户反馈"没有靠右"）。
+		const rightGroup = bar.createDiv({ cls: "nyareader-shelf-main-actions" });
+		const sortWrap = rightGroup.createEl("label", { cls: "nyareader-shelf-sort-wrap" });
 		sortWrap.createSpan({ cls: "nyareader-shelf-sort-label", text: "排序" });
 		const sel = sortWrap.createEl("select", { cls: "nyareader-shelf-sort", attr: { "aria-label": "书架排序方式" } });
 		for (const o of SORT_OPTIONS) sel.createEl("option", { value: o.value, text: o.label });
@@ -335,7 +338,9 @@ export class BookshelfView extends ItemView {
 			this.sort = sel.value as BookshelfSort;
 			void this.render();
 		});
-		bar.createEl("button", { text: "＋ 新建文件夹", cls: "nyareader-shelf-btn" }).addEventListener("click", () => void this.createFolder());
+		rightGroup
+			.createEl("button", { text: "＋ 新建文件夹", cls: "nyareader-shelf-btn" })
+			.addEventListener("click", () => void this.createFolder());
 
 		// 只有文件夹区域滚动，标题行与新建按钮固定
 		const scroll = main.createDiv({ cls: "nyareader-shelf-main-scroll" });

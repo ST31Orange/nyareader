@@ -103,7 +103,7 @@
         "windowTo": 2
       },
       "diag": {
-        "lastRelayoutMs": 1,
+        "lastRelayoutMs": 2,
         "pagesAddedLastMeasure": 0,
         "stagedPending": false,
         "pages": 8,
@@ -124,19 +124,19 @@
             "from": 0,
             "to": 1,
             "active": 0,
-            "stack": "    at HtmlDocEngine.applyWindow (file:///C:/WINDOWS/Temp/nyar-cold-WvBul8/cold-engine.js:1679:101) |     at HtmlDocEngine.populatePagedContainer (file:///C:/WINDOWS/Temp/nyar-cold-WvBul8/cold-engine.js:2149:14) |     at HtmlDocEngine.wrapPaged (file:///C:/WINDOWS/Temp/nyar-cold-WvBul8/cold-engine.js:2205:12)"
+            "stack": "    at HtmlDocEngine.applyWindow (file:///C:/WINDOWS/Temp/nyar-cold-N2gwpm/cold-engine.js:1686:101) |     at HtmlDocEngine.populatePagedContainer (file:///C:/WINDOWS/Temp/nyar-cold-N2gwpm/cold-engine.js:2156:14) |     at HtmlDocEngine.wrapPaged (file:///C:/WINDOWS/Temp/nyar-cold-N2gwpm/cold-engine.js:2212:12)"
           },
           {
             "from": 0,
             "to": 1,
             "active": 0,
-            "stack": "    at HtmlDocEngine.applyWindow (file:///C:/WINDOWS/Temp/nyar-cold-WvBul8/cold-engine.js:1679:101) |     at HtmlDocEngine.populatePagedContainer (file:///C:/WINDOWS/Temp/nyar-cold-WvBul8/cold-engine.js:2149:14) |     at HtmlDocEngine.wrapPaged (file:///C:/WINDOWS/Temp/nyar-cold-WvBul8/cold-engine.js:2164:14)"
+            "stack": "    at HtmlDocEngine.applyWindow (file:///C:/WINDOWS/Temp/nyar-cold-N2gwpm/cold-engine.js:1686:101) |     at HtmlDocEngine.populatePagedContainer (file:///C:/WINDOWS/Temp/nyar-cold-N2gwpm/cold-engine.js:2156:14) |     at HtmlDocEngine.wrapPaged (file:///C:/WINDOWS/Temp/nyar-cold-N2gwpm/cold-engine.js:2171:14)"
           },
           {
             "from": 1,
             "to": 2,
             "active": 2,
-            "stack": "    at HtmlDocEngine.applyWindow (file:///C:/WINDOWS/Temp/nyar-cold-WvBul8/cold-engine.js:1679:101) |     at HtmlDocEngine.ensureWindow (file:///C:/WINDOWS/Temp/nyar-cold-WvBul8/cold-engine.js:1699:12) |     at HtmlDocEngine.goTo (file:///C:/WINDOWS/Temp/nyar-cold-WvBul8/cold-engine.js:1858:18)"
+            "stack": "    at HtmlDocEngine.applyWindow (file:///C:/WINDOWS/Temp/nyar-cold-N2gwpm/cold-engine.js:1686:101) |     at HtmlDocEngine.ensureWindow (file:///C:/WINDOWS/Temp/nyar-cold-N2gwpm/cold-engine.js:1706:12) |     at HtmlDocEngine.goTo (file:///C:/WINDOWS/Temp/nyar-cold-N2gwpm/cold-engine.js:1865:18)"
           }
         ]
       },

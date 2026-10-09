@@ -796,13 +796,11 @@
 	border-left: 2px solid var(--interactive-accent);
 }
 
-/* 排序控件：贴右，紧挨「＋新建文件夹」（用户要求往右靠） */
+/* 排序控件：由外层操作组统一靠右，自身不再用 auto margin */
 .nyareader-shelf-sort-wrap {
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
-	margin-left: auto;
-	margin-right: 2px;
 }
 .nyareader-shelf-sort-label {
 	font-size: 12px;
@@ -1551,8 +1549,21 @@
 	margin: 0;
 	font-size: 16px;
 }
-.nyareader-shelf-main-bar .nyareader-shelf-btn {
+/*
+ * 右侧操作组：排序 + 新建文件夹**整体**靠右。
+ *
+ * 必须只有这一个元素带 auto margin —— 旧实现让排序控件和按钮各自 `margin-left:auto`，
+ * flex 会把剩余空间平分，于是排序控件停在中间（用户反馈"靠右没生效"）。
+ */
+.nyareader-shelf-main-actions {
+	display: inline-flex;
+	align-items: center;
+	gap: 10px;
 	margin-left: auto;
+}
+/* 组内按钮不再需要自己的 auto margin（否则又变成两个 auto margin 平分空间） */
+.nyareader-shelf-main-bar .nyareader-shelf-main-actions .nyareader-shelf-btn {
+	margin-left: 0;
 }
 /* 文件夹拖动排序手柄 */
 .nyareader-folder-grip {

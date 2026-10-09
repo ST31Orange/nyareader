@@ -1,0 +1,63 @@
+{
+  "checks": [
+    {
+      "name": "排序控件位于书库栏右半区",
+      "pass": true
+    },
+    {
+      "name": "排序控件紧邻「＋新建文件夹」左侧（间距 ≤ 16px）",
+      "pass": true
+    },
+    {
+      "name": "外层操作组承担 auto margin（只此一处，避免空间被平分）",
+      "pass": true
+    },
+    {
+      "name": "排序控件自身不再用 auto margin（否则与按钮平分空间）",
+      "pass": true
+    },
+    {
+      "name": "书库名仍在左侧",
+      "pass": true
+    },
+    {
+      "name": "排序整组贴右边界（组的右缘与栏右缘差 ≤ 4px）",
+      "pass": true
+    }
+  ],
+  "pass": true,
+  "numbers": {
+    "barWidth": 1123,
+    "h3": {
+      "left": 219,
+      "right": 283,
+      "width": 64
+    },
+    "sortWrap": {
+      "left": 1112,
+      "right": 1224,
+      "width": 112
+    },
+    "sortSelect": {
+      "left": 1142,
+      "right": 1224,
+      "width": 82
+    },
+    "newFolderBtn": {
+      "left": 1234,
+      "right": 1342,
+      "width": 108
+    },
+    "actions": {
+      "left": 1112,
+      "right": 1342,
+      "width": 230
+    },
+    "actionsMarginLeft": "747.234px",
+    "sortWrapMarginLeft": "0px",
+    "barDisplay": "flex",
+    "barJustify": "normal",
+    "gapSortToBtn": 10,
+    "sortIsRightOfCenter": true
+  }
+}

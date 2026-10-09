@@ -269,6 +269,14 @@ export class PdfEngine implements IReaderEngine {
 		return this.settings.scrollMode !== false;
 	}
 
+	/**
+	 * 对外：当前是否分页模式（键盘路由用）。
+	 * 注意 PDF 默认 `scrollMode: true`，即**默认连续滚动**，此时 ↑/↓ 应为小格滚动。
+	 */
+	isPagedMode(): boolean {
+		return !this.scrollModeActive();
+	}
+
 	/** 当前是否为双页对开布局。 */
 	private spreadActive(): boolean {
 		return this.settings.layout === "double";

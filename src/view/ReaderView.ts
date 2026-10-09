@@ -1102,9 +1102,12 @@ export class ReaderView extends ItemView {
 			}
 			return;
 		}
-		// 滚动式引擎（EPUB/MOBI/AZW3/TXT）：↑/↓=逐行滚动（原生手感），
-		// ←/→=翻页、PgUp/PgDn=翻页，Home/End=首/末
-		if (!engine.capabilities?.pageNav) {
+		// 连续滚动模式（EPUB/MOBI/AZW3/TXT/PDF）：
+		// ↑/↓=滚一小格（≈3 行，贴近滚轮手感），←/→ 与 PgUp/PgDn=翻一屏，Home/End=首/末。
+		// ⚠️ 判定必须用"**当前**是否分页"（isPagedMode），不能用 capabilities.pageNav ——
+		// 后者是静态能力（EPUB/MOBI/AZW3 恒为 true），会让滚动模式下 ↑/↓ 变成翻页。
+		if (engine.isPagedMode && !engine.isPagedMode()) {
+			// 连续滚动模式：↑/↓=滚一小格（≈3 行），←/→ 与 PgUp/PgDn=翻一屏，Home/End=首/末
 			switch (evt.key) {
 				case "ArrowUp":
 					evt.preventDefault();

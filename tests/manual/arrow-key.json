@@ -1,0 +1,40 @@
+{
+  "checks": [
+    {
+      "name": "↑/↓ 的滚动距离 ≈ 3 行（108px）",
+      "pass": true
+    },
+    {
+      "name": "↓ 与 ↑ 方向相反且对称",
+      "pass": true
+    },
+    {
+      "name": "滚动模式下 isPagedMode() === false（键盘才能路由到 scrollStep）",
+      "pass": true
+    },
+    {
+      "name": "按修复后的路由调用 scrollStep，实际滚动约 3 行",
+      "pass": true
+    },
+    {
+      "name": "分页模式下 isPagedMode() === true（↑/↓ 应走翻页）",
+      "pass": true
+    },
+    {
+      "name": "引擎处理 iframe 按键时不会在父文档重复处理（无双触发）",
+      "pass": true
+    }
+  ],
+  "pass": true,
+  "numbers": {
+    "linePx": 36,
+    "expectedStep": 108,
+    "downDelta": 108,
+    "upDelta": 108,
+    "parentKeydownsDuringEnginePress": 0,
+    "pagedReported": false,
+    "routedDelta": 108,
+    "pagedWhenPaged": true,
+    "errors": []
+  }
+}

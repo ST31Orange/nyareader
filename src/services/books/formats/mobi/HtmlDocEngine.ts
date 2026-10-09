@@ -527,6 +527,14 @@ export class HtmlDocEngine implements IReaderEngine {
 		return this.settings.scrollMode === false;
 	}
 
+	/**
+	 * 对外：当前是否分页模式（键盘路由用）。
+	 * `capabilities.pageNav` 是静态能力（本引擎恒为 true），**不能**用它判断当前模式。
+	 */
+	isPagedMode(): boolean {
+		return this.isPaged();
+	}
+
 	/** 双页对开 = 分页模式 + layout==="double"（是否真正生效见 layout.double）。 */
 	private isDouble(): boolean {
 		return this.settings.layout === "double";
