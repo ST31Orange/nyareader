@@ -25,6 +25,7 @@ import { formatPageIndicator, formatSeekPercent, ratioFromClientX, stepSeekPerce
 import { HIGHLIGHT_COLORS, HIGHLIGHT_COLOR_LABEL, normalizeHighlightColor, type HighlightColor } from "../services/annotations/AnnotationModel";
 import type { Annotation } from "../services/annotations/AnnotationModel";
 import { annotationExportFileName, annotationsToMarkdown } from "../utils/annotation-markdown";
+import { DEFAULT_FINGERPRINT_SIDECAR_DIR } from "../utils/annotation-sidecar-path";
 
 export { READER_VIEW_TYPE } from "./ReaderViewTypes";
 
@@ -1257,7 +1258,7 @@ export class ReaderView extends ItemView {
 			bookPath: book.path,
 			bookFingerprint: book.fingerprint,
 		});
-		const dir = this.plugin.manifest.dir ? `${this.plugin.manifest.dir}/annotations` : "nyareader/annotations";
+		const dir = this.plugin.settings.annotationDir || DEFAULT_FINGERPRINT_SIDECAR_DIR;
 		try {
 			await this.plugin.app.vault.adapter.mkdir(dir).catch(() => undefined);
 			const path = `${dir}/${annotationExportFileName(book.title)}`;

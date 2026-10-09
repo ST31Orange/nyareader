@@ -7,6 +7,7 @@
  */
 import { Notice, Plugin, TFile } from "obsidian";
 import { NyaReaderSettings, normalizeSettings } from "./settings";
+import { setAnnotationSidecarDir } from "./utils/annotation-sidecar-path";
 import { NyaReaderSettingTab } from "./settings-tab";
 import { ReaderView, READER_VIEW_TYPE } from "./view/ReaderView";
 import { BookshelfView } from "./view/BookshelfView";
@@ -105,6 +106,9 @@ export default class NyaReaderPlugin extends Plugin {
 
 	async loadSettings(): Promise<void> {
 		this.settings = normalizeSettings(await this.loadData());
+		// 批注主存储目录来自设置（默认与书架同级）。必须在任何批注读写之前注入，
+		// 否则会读到默认目录，表现为"迁移书架后批注全都不见了"。
+		setAnnotationSidecarDir(this.settings.annotationDir);
 	}
 
 	async saveSettings(): Promise<void> {

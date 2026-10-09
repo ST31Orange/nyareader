@@ -6,6 +6,10 @@
  */
 import type { ReaderSettings, ReaderTheme } from "./types";
 import { DEFAULT_READER_SETTINGS } from "./types";
+import {
+	DEFAULT_FINGERPRINT_SIDECAR_DIR,
+	annotationDirForBookshelf,
+} from "./utils/annotation-sidecar-path";
 
 /** 书架卡片显示模式（按区域生效） */
 export type BookshelfDisplayMode = "full" | "compact" | "list";
@@ -52,6 +56,12 @@ export interface NyaReaderSettings {
 	bookshelfMigrated: boolean;
 	/** 批注侧车文件名后缀 */
 	annotationSidecarSuffix: string;
+	/**
+	 * 批注主存储目录（vault 相对路径）。
+	 * 默认与书架同级：书架 `nyareader/library` ↔ 批注 `nyareader/annotations`，
+	 * 迁移书架时两者一起搬（见 settings-tab 的迁移逻辑）。
+	 */
+	annotationDir: string;
 }
 
 export const DEFAULT_TRANSLATION_SETTINGS: TranslationSettings = {
@@ -65,6 +75,15 @@ export const DEFAULT_UI_SETTINGS: ReaderUiSettings = {
 
 /** 书架根目录默认位置（vault 相对路径）。 */
 export const DEFAULT_BOOKSHELF_DIR = "nyareader/library";
+
+/**
+ * 书架**上级目录**（书库与批注目录的公共父目录）的默认值。
+ *
+ * 为什么需要它：书库在 `nyareader/library`、批注在 `nyareader/annotations`，
+ * 两者是同级兄弟。迁移时必须搬**上级目录**，否则只搬了 library、批注留在原地
+ * （用户实测到的问题）。这个值就是"搬谁"的答案。
+ */
+export const DEFAULT_BOOKSHELF_ROOT = "nyareader";
 
 export const DEFAULT_SETTINGS: NyaReaderSettings = {
 	bookOverrides: {},
@@ -89,6 +108,7 @@ export const DEFAULT_SETTINGS: NyaReaderSettings = {
 	bookshelfSelectedLibrary: "",
 	bookshelfMigrated: false,
 	annotationSidecarSuffix: ".annotations",
+	annotationDir: DEFAULT_FINGERPRINT_SIDECAR_DIR,
 };
 
 /** 归一化用户数据，保证运行时永远拿到合法形状（旧版多余翻译字段自动忽略）。 */
@@ -125,6 +145,11 @@ export function normalizeSettings(raw: unknown): NyaReaderSettings {
 		},
 		translationPromptShown: v.translationPromptShown === true,
 		annotationSidecarSuffix: strOr(v.annotationSidecarSuffix, DEFAULT_SETTINGS.annotationSidecarSuffix),
+		// 老配置没有 annotationDir：按书架目录推导（两者默认同级），保证升级后能找到已有批注
+		annotationDir: strOr(
+			v.annotationDir,
+			annotationDirForBookshelf(typeof v.bookshelfDir === "string" && v.bookshelfDir ? v.bookshelfDir : DEFAULT_BOOKSHELF_DIR)
+		),
 	};
 }
 

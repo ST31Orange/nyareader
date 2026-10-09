@@ -11,6 +11,11 @@ import alipayIcon from "./assets/donate-alipay.jpg";
 import wechatIcon from "./assets/donate-wechat.jpg";
 
 import { DEFAULT_BOOKSHELF_DIR } from "./settings";
+import {
+	DEFAULT_FINGERPRINT_SIDECAR_DIR,
+	annotationDirForBookshelf,
+	setAnnotationSidecarDir,
+} from "./utils/annotation-sidecar-path";
 
 export class NyaReaderSettingTab extends PluginSettingTab {
 	constructor(
@@ -66,12 +71,32 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 				});
 		});
 
+		// 默认翻页方式：滚动（连续滚）还是分页（一页一页翻）
+		new Setting(containerEl)
+			.setName("默认翻页方式")
+			.setDesc(
+				"新打开的书的默认阅读方式：滚动 = 连续向下滚；分页 = 一页一页翻。" +
+					"（单页/双页只对「分页」生效；阅读时用标题栏按钮切换会记到那一本书上，不受此默认影响）"
+			)
+			.addDropdown((d) => {
+				d.addOptions({ paged: "分页（一页一页翻）", scroll: "滚动（连续向下滚）" })
+					.setValue(this.plugin.settings.reader.scrollMode === true ? "scroll" : "paged")
+					.onChange(async (v) => {
+						this.plugin.settings.reader.scrollMode = v === "scroll";
+						await this.plugin.saveSettings();
+					});
+			});
+
 		// ---------- 书库管理（删除书库放在设置里） ----------
 		containerEl.createEl("h3", { text: "书库管理" });
 		const shelfDir = this.plugin.settings.bookshelfDir || DEFAULT_BOOKSHELF_DIR;
+		const annotationDir = this.plugin.settings.annotationDir || DEFAULT_FINGERPRINT_SIDECAR_DIR;
 		new Setting(containerEl)
 			.setName("书架位置")
-			.setDesc(`当前：${shelfDir}。迁移会把整个书架目录（含所有书库/文件夹/书）移动到新的位置。`)
+			.setDesc(
+				`当前书库：${shelfDir}　批注：${annotationDir}。` +
+					`迁移会把两者的**上级目录**一起搬走，并同步更新书库路径、批注目录与阅读进度索引。`
+			)
 			.addButton((b) =>
 				b.setButtonText("迁移…").onClick(() => {
 					new PromptModal(this.app, {
@@ -80,33 +105,7 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 						initialValue: shelfDir,
 						submitText: "迁移",
 						onSubmit: async (value) => {
-							const target = value.trim().replace(/^\/+|\/+$/g, "");
-							if (!target || target === shelfDir) return;
-							if (target.startsWith(`${shelfDir}/`)) {
-								new Notice("NyaReader：不能把书架迁移到它自己的子目录里。");
-								return;
-							}
-							const src = this.plugin.app.vault.getAbstractFileByPath(shelfDir);
-							if (!(src instanceof TFolder)) {
-								new Notice("NyaReader：找不到当前书架目录，无法迁移。");
-								return;
-							}
-							if (this.plugin.app.vault.getAbstractFileByPath(target)) {
-								new Notice("NyaReader：目标位置已存在，请换一个路径。");
-								return;
-							}
-							const idx = target.lastIndexOf("/");
-							if (idx > 0) await this.mkdirpVault(target.slice(0, idx));
-							await this.plugin.app.vault.rename(src, target);
-							const oldPrefix = `${shelfDir}/`;
-							const newPrefix = `${target}/`;
-							for (const e of this.plugin.bookIndex.list()) {
-								if (e.path.startsWith(oldPrefix)) await this.plugin.bookIndex.upsert({ ...e, path: e.path.replace(oldPrefix, newPrefix) });
-							}
-							this.plugin.settings.bookshelfDir = target;
-							await this.plugin.saveSettings();
-							new Notice(`NyaReader：书架已迁移到「${target}」。`);
-							this.display();
+							await this.migrateBookshelf(value);
 						},
 					}).open();
 				})
@@ -231,5 +230,103 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 			cur = cur ? `${cur}/${part}` : part;
 			if (!this.plugin.app.vault.getAbstractFileByPath(cur)) await this.plugin.app.vault.createFolder(cur).catch(() => undefined);
 		}
+	}
+
+	/**
+	 * 迁移书架位置。
+	 *
+	 * 用户实测到的问题：旧实现只 `rename(bookshelfDir)`，于是**只搬了 library，
+	 * 批注目录 `annotations` 留在原地** → 迁移后批注全"消失"（其实还在旧位置）。
+	 *
+	 * 正确做法：书库与批注是**同级兄弟**（`nyareader/library` ↔ `nyareader/annotations`），
+	 * 所以搬它们的**公共上级目录**，一次搬完；搬不动时再退回"只搬书库 + 单独搬批注目录"。
+	 * 两种情况都会同步更新设置与阅读进度索引。
+	 */
+	private async migrateBookshelf(rawTarget: string): Promise<void> {
+		const app = this.plugin.app;
+		const oldShelf = this.plugin.settings.bookshelfDir || DEFAULT_BOOKSHELF_DIR;
+		const oldAnnotations = this.plugin.settings.annotationDir || annotationDirForBookshelf(oldShelf);
+		const target = rawTarget.trim().replace(/^\/+|\/+$/g, "");
+		if (!target || target === oldShelf) return;
+		if (target.startsWith(`${oldShelf}/`)) {
+			new Notice("NyaReader：不能把书架迁移到它自己的子目录里。");
+			return;
+		}
+		const srcFolder = app.vault.getAbstractFileByPath(oldShelf);
+		if (!(srcFolder instanceof TFolder)) {
+			new Notice("NyaReader：找不到当前书架目录，无法迁移。");
+			return;
+		}
+		if (app.vault.getAbstractFileByPath(target)) {
+			new Notice("NyaReader：目标位置已存在，请换一个路径。");
+			return;
+		}
+		try {
+			const shelfName = oldShelf.slice(oldShelf.lastIndexOf("/") + 1) || "library";
+			const parentIdx = target.lastIndexOf("/");
+			if (parentIdx > 0) await this.mkdirpVault(target.slice(0, parentIdx));
+			const newParent = parentIdx > 0 ? target.slice(0, parentIdx) : "";
+			const newShelf = parentIdx > 0 ? `${newParent}/${shelfName}` : shelfName;
+			const newAnnotations = parentIdx > 0 ? `${newParent}/annotations` : "annotations";
+
+			const oldParent = oldShelf.includes("/") ? oldShelf.slice(0, oldShelf.lastIndexOf("/")) : "";
+			const annotationsIsSibling = oldAnnotations === annotationDirForBookshelf(oldShelf);
+			const parentFolder = oldParent ? app.vault.getAbstractFileByPath(oldParent) : null;
+
+			// 主路径：搬"library 与 annotations 的公共上级目录"，一次搬完两者
+			if (oldParent && parentFolder instanceof TFolder && annotationsIsSibling) {
+				await app.vault.rename(parentFolder, newParent);
+				await this.applyMigration(oldShelf, newShelf, oldAnnotations, newAnnotations, false);
+				return;
+			}
+			// 回退：上级目录不存在 / 批注不在同级 → 只搬书库 + 单独尝试搬批注目录
+			await app.vault.rename(srcFolder, newShelf);
+			await this.applyMigration(oldShelf, newShelf, oldAnnotations, newAnnotations, true);
+		} catch (e) {
+			new Notice(`NyaReader：迁移失败：${e instanceof Error ? e.message : String(e)}`, 6000);
+		}
+	}
+
+	/** 迁移收尾：更新设置 + 阅读进度索引路径 + 批注目录注入。 */
+	private async applyMigration(
+		oldShelf: string,
+		newShelf: string,
+		oldAnnotations: string,
+		newAnnotations: string,
+		moveAnnotations: boolean
+	): Promise<void> {
+		const app = this.plugin.app;
+		let annotationsMoved = !moveAnnotations;
+		if (moveAnnotations) {
+			const annFolder = app.vault.getAbstractFileByPath(oldAnnotations);
+			if (annFolder instanceof TFolder) {
+				try {
+					if (!app.vault.getAbstractFileByPath(newAnnotations)) await app.vault.rename(annFolder, newAnnotations);
+					annotationsMoved = true;
+				} catch {
+					annotationsMoved = false;
+				}
+			} else {
+				annotationsMoved = true; // 本来就没有批注目录
+			}
+		}
+		// 阅读进度索引里的书路径也要跟着改，否则"进度全部丢失"
+		const oldPrefix = `${oldShelf}/`;
+		const newPrefix = `${newShelf}/`;
+		for (const e of this.plugin.bookIndex.list()) {
+			if (e.path.startsWith(oldPrefix)) await this.plugin.bookIndex.upsert({ ...e, path: e.path.replace(oldPrefix, newPrefix) });
+		}
+		this.plugin.settings.bookshelfDir = newShelf;
+		// 搬成功 → 批注目录跟着走；没搬成功 → 保持旧路径（批注仍可用，只是没搬）
+		this.plugin.settings.annotationDir = annotationsMoved ? newAnnotations : oldAnnotations;
+		setAnnotationSidecarDir(this.plugin.settings.annotationDir);
+		await this.plugin.saveSettings();
+		new Notice(
+			annotationsMoved
+				? `NyaReader：已迁移到「${newShelf}」（书库与批注一并搬走）。`
+				: `NyaReader：书库已迁移到「${newShelf}」，但批注目录未能搬迁，仍留在「${oldAnnotations}」。`,
+			8000
+		);
+		this.display();
 	}
 }

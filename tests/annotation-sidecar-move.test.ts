@@ -10,13 +10,16 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-	FINGERPRINT_SIDECAR_DIR,
+	annotationDirForBookshelf,
+	annotationSidecarDir,
 	bookSidecarPathV1,
 	bookSidecarPathV2,
+	DEFAULT_FINGERPRINT_SIDECAR_DIR,
 	fingerprintSidecarPath,
 	isValidFingerprint,
 	legacySidecarPaths,
 	planSidecarMigration,
+	setAnnotationSidecarDir,
 } from "../src/utils/annotation-sidecar-path";
 import {
 	FingerprintAnnotationStore,
@@ -70,7 +73,7 @@ const SAMPLE = {
 
 describe("路径计算", () => {
 	it("主存储路径与书位置无关", () => {
-		expect(fingerprintSidecarPath(FP)).toBe(`${FINGERPRINT_SIDECAR_DIR}/${FP}.annotations.json`);
+		expect(fingerprintSidecarPath(FP)).toBe(`${annotationDirForBookshelf("nyareader/library")}/${FP}.annotations.json`);
 	});
 
 	it("旧位置候选：书旁 v2 → v1（顺序固定；无扩展名时追加 .v2 变体）", () => {
@@ -263,7 +266,7 @@ describe("SidecarAnnotationStore 指纹优先（实际接线后的行为）", ()
 		await store.writeForBook("library/lib/f/book.epub", [SAMPLE as never], "pending-abc12345");
 		expect(fs.files.has(legacyPath)).toBe(true);
 		// 不会被写到指纹目录下
-		expect([...fs.files.keys()].every((p) => !p.includes(FINGERPRINT_SIDECAR_DIR))).toBe(true);
+		expect([...fs.files.keys()].every((p) => !p.includes("annotations/"))).toBe(true);
 	});
 
 	it("旧书旁侧车仍能读到，且读到后写入指纹路径（旧文件不变）", async () => {
@@ -277,5 +280,62 @@ describe("SidecarAnnotationStore 指纹优先（实际接线后的行为）", ()
 		expect(fs.files.get(legacy)).toBe(legacyRaw); // 旧文件字节不变
 		await store.writeForBook(book, read.annotations, FP);
 		expect(fs.files.has(fingerprintSidecarPath(FP))).toBe(true);
+	});
+});
+
+/**
+ * 回归：设置里"迁移书架位置"曾经只搬 `library`，把 `annotations` 留在原地
+ * → 迁移后批注全"消失"（其实还在旧目录）。
+ *
+ * 现在书库与批注由**同一套目录推导**绑定：批注目录 = 书架的上级目录 + `/annotations`。
+ * 搬上级目录即一次搬走两者；`setAnnotationSidecarDir()` 让运行期跟随设置。
+ */
+describe("批注目录与书架目录绑定（迁移书架必须一起搬）", () => {
+	it("由书架目录推导批注目录：取上级目录 + /annotations", () => {
+		expect(annotationDirForBookshelf("nyareader/library")).toBe("nyareader/annotations");
+		expect(annotationDirForBookshelf("Books/MyShelf")).toBe("Books/annotations");
+		expect(annotationDirForBookshelf("library")).toBe("annotations");
+		expect(annotationDirForBookshelf("nyareader/library/")).toBe("nyareader/annotations");
+	});
+
+	it("批注目录与书库是**同级兄弟**（这样才能用一个 rename 一起搬）", () => {
+		const shelf = "nyareader/library";
+		const ann = annotationDirForBookshelf(shelf);
+		expect(shelf.slice(0, shelf.lastIndexOf("/"))).toBe(ann.slice(0, ann.lastIndexOf("/")));
+	});
+
+	it("注入新目录后，主存储路径随之改变（迁移后仍找得到批注）", async () => {
+		const before = annotationSidecarDir();
+		try {
+			setAnnotationSidecarDir(DEFAULT_FINGERPRINT_SIDECAR_DIR);
+			expect(fingerprintSidecarPath(FP)).toBe(`${DEFAULT_FINGERPRINT_SIDECAR_DIR}/${FP}.annotations.json`);
+			// 模拟迁移：改成新位置
+			const moved = annotationDirForBookshelf("newhome/library");
+			setAnnotationSidecarDir(moved);
+			expect(moved).toBe("newhome/annotations");
+			expect(fingerprintSidecarPath(FP)).toBe(`newhome/annotations/${FP}.annotations.json`);
+			// 同一本书（指纹不变）换目录后仍能读到同一批
+			const fs = makeFs();
+			const store = new FingerprintAnnotationStore(fs);
+			await store.write(FP, [SAMPLE as never], "newhome/library/x/book.epub");
+			expect((await store.read(FP, "newhome/library/x/book.epub"))[0].id).toBe("a1");
+			expect(fs.files.has(`newhome/annotations/${FP}.annotations.json`)).toBe(true);
+		} finally {
+			setAnnotationSidecarDir(before);
+		}
+	});
+
+	it("非法目录被忽略（不会把批注写到空路径或根路径）", () => {
+		const before = annotationSidecarDir();
+		try {
+			setAnnotationSidecarDir("");
+			expect(annotationSidecarDir()).toBe(before);
+			setAnnotationSidecarDir("   ");
+			expect(annotationSidecarDir()).toBe(before);
+			setAnnotationSidecarDir(undefined);
+			expect(annotationSidecarDir()).toBe(before);
+		} finally {
+			setAnnotationSidecarDir(before);
+		}
 	});
 });

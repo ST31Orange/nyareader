@@ -13,8 +13,44 @@
  */
 import type { AnnotationAnchor } from "../services/annotations/AnnotationAnchor";
 
-/** 指纹侧车主目录（相对 vault）。 */
-export const FINGERPRINT_SIDECAR_DIR = "nyareader/annotations";
+/**
+ * 指纹侧车主目录（默认值）。
+ *
+ * **它会与书架目录联动**：默认书架是 `nyareader/library`，批注目录就是同级的
+ * `nyareader/annotations`。用户在设置里迁移书架位置时，两者一起搬 —— 否则
+ * "迁移后批注全丢"（用户实测到的问题）。
+ * 运行期由 `setAnnotationSidecarDir()` 按设置注入。
+ */
+export const DEFAULT_FINGERPRINT_SIDECAR_DIR = "nyareader/annotations";
+
+let sidecarDir = DEFAULT_FINGERPRINT_SIDECAR_DIR;
+
+/** 当前批注目录（vault 相对路径，不含尾部斜杠）。 */
+export function annotationSidecarDir(): string {
+	return sidecarDir;
+}
+
+/**
+ * 由**书架目录**推导批注目录：取书架的上级目录 + `/annotations`。
+ *
+ * 这是"迁移时两个文件夹一起搬"的基础 —— 两者必须是同级兄弟，
+ * 才能用一个 `vault.rename(上级目录)` 一次搬完。
+ */
+export function annotationDirForBookshelf(bookshelfDir: string): string {
+	const normalized = normalizePath(bookshelfDir).replace(/\/+$/, "");
+	const slash = normalized.lastIndexOf("/");
+	// 书架直接放在 vault 根目录时，批注也放根目录下的 annotations/
+	if (slash <= 0) return "annotations";
+	return `${normalized.slice(0, slash)}/annotations`;
+}
+
+/** 注入批注目录（设置加载/迁移后调用；非法值忽略）。 */
+export function setAnnotationSidecarDir(dir: string | undefined | null): void {
+	if (typeof dir !== "string") return;
+	const normalized = normalizePath(dir).trim().replace(/^\/+|\/+$/g, "");
+	if (!normalized) return;
+	sidecarDir = normalized;
+}
 
 /**
  * 指纹是否可用于落盘。
@@ -32,9 +68,9 @@ export function isValidFingerprint(fp: unknown): fp is string {
 	return true;
 }
 
-/** 主存储路径：`nyareader/annotations/<fingerprint><suffix>.json`。 */
+/** 主存储路径：`<批注目录>/<fingerprint><suffix>.json`。 */
 export function fingerprintSidecarPath(fingerprint: string, suffix = ".annotations"): string {
-	return `${FINGERPRINT_SIDECAR_DIR}/${fingerprint}${suffix}.json`;
+	return `${sidecarDir}/${fingerprint}${suffix}.json`;
 }
 
 /** 规范化为 vault 内路径（统一 `/`）。 */
