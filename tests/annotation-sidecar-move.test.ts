@@ -26,6 +26,7 @@ import {
 	type FingerprintSidecarAdapter,
 } from "../src/services/annotations/FingerprintAnnotationStore";
 import { SidecarAnnotationStore } from "../src/services/annotations/SidecarAnnotationStore";
+import { planBookshelfMigration } from "../src/utils/migration-plan";
 
 const FP = "9f56ae4d159cd3609e48c49ea89acc39";
 const FP2 = "abcf4c5bf198f014047a62f158bc39c9";
@@ -337,5 +338,85 @@ describe("批注目录与书架目录绑定（迁移书架必须一起搬）", (
 		} finally {
 			setAnnotationSidecarDir(before);
 		}
+	});
+});
+
+/**
+ * 迁移决策（纯函数）。
+ *
+ * 覆盖用户实测到的两类失败：
+ * 1. `Destination file already exists` —— 目标目录已存在却走"整体 rename"；
+ * 2. 只搬 library、annotations 留在原地。
+ */
+describe("迁移决策 planBookshelfMigration", () => {
+	const base = {
+		bookshelfDir: "nyareader/library",
+		annotationDir: "nyareader/annotations",
+		shelfExists: true,
+	} as const;
+
+	it("用户填**上级目录**、目标不存在 → 整体搬上级目录（一次搬完两者）", () => {
+		const p = planBookshelfMigration({ ...base, rawTarget: "newhome", targetState: "missing" });
+		expect(p.error).toBeUndefined();
+		expect(p.anchor).toBe("newhome");
+		expect(p.newShelfDir).toBe("newhome/library");
+		expect(p.newAnnDir).toBe("newhome/annotations");
+		expect(p.strategy).toBe("whole-parent");
+		expect(p.siblings).toBe(true);
+	});
+
+	it("目标**已存在但为空**（用户先建好空文件夹）→ 分别搬子目录，绝不整体 rename", () => {
+		const p = planBookshelfMigration({ ...base, rawTarget: "newhome", targetState: "empty-folder" });
+		expect(p.error).toBeUndefined();
+		// 关键：这正是之前报 Destination file already exists 的场景
+		expect(p.strategy).toBe("move-children");
+		expect(p.newShelfDir).toBe("newhome/library");
+		expect(p.newAnnDir).toBe("newhome/annotations");
+	});
+
+	it("用户仍按旧习惯填到 …/library → 自动纠正为上级目录（不建出 library/library）", () => {
+		const p = planBookshelfMigration({ ...base, rawTarget: "deep/newhome/library", targetState: "missing" });
+		expect(p.error).toBeUndefined();
+		expect(p.anchor).toBe("deep/newhome");
+		expect(p.newShelfDir).toBe("deep/newhome/library");
+		expect(p.newAnnDir).toBe("deep/newhome/annotations");
+	});
+
+	it("目标目录非空 → 拒绝并给出可操作原因", () => {
+		const p = planBookshelfMigration({ ...base, rawTarget: "busy", targetState: "non-empty-folder" });
+		expect(p.error).toContain("已有内容");
+		expect(p.strategy).toBeUndefined();
+	});
+
+	it("目标被同名文件占用 → 拒绝", () => {
+		expect(planBookshelfMigration({ ...base, rawTarget: "afile", targetState: "file" }).error).toContain("文件");
+	});
+
+	it("空输入 / 与当前位置相同 / 迁到自己的子目录 → 拒绝", () => {
+		expect(planBookshelfMigration({ ...base, rawTarget: "   ", targetState: "missing" }).error).toContain("请填写");
+		expect(planBookshelfMigration({ ...base, rawTarget: "nyareader", targetState: "empty-folder" }).error).toContain("相同");
+		expect(
+			planBookshelfMigration({ ...base, rawTarget: "nyareader/sub", targetState: "missing" }).error
+		).toContain("子目录");
+	});
+
+	it("书库目录不存在 → 拒绝（不会产生半搬状态）", () => {
+		expect(
+			planBookshelfMigration({ ...base, rawTarget: "newhome", targetState: "missing", shelfExists: false }).error
+		).toContain("找不到");
+	});
+
+	it("批注不在同级（自定义过路径）→ 退化为分别搬子目录，仍能算出新路径", () => {
+		const p = planBookshelfMigration({
+			bookshelfDir: "nyareader/library",
+			annotationDir: "elsewhere/notes",
+			shelfExists: true,
+			rawTarget: "newhome",
+			targetState: "missing",
+		});
+		expect(p.siblings).toBe(false);
+		expect(p.strategy).toBe("move-children");
+		expect(p.newShelfDir).toBe("newhome/library");
+		expect(p.newAnnDir).toBe("newhome/notes");
 	});
 });

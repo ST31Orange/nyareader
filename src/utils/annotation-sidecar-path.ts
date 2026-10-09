@@ -44,9 +44,25 @@ export function annotationDirForBookshelf(bookshelfDir: string): string {
 	return `${normalized.slice(0, slash)}/annotations`;
 }
 
+/**
+ * 迁移时"用户该填的目录"（= 书库与批注的公共上级目录）。
+ *
+ * - 默认形态（两者同级兄弟）：`nyareader/library` + `nyareader/annotations` → **`nyareader`**
+ * - 自定义/不标准形态：退回返回书库目录本身（迁移会走"分别搬子目录"的路径）
+ *
+ * 设置页用它在提示文案与输入框初值里显示"上级目录"，避免用户填到子目录上。
+ */
+export function bookshelfAnchor(bookshelfDir: string, annotationDir?: string): string {
+	const shelf = normalizePath(bookshelfDir).replace(/\/+$/, "");
+	if (!shelf) return "";
+	const ann = (annotationDir ?? annotationDirForBookshelf(shelf)).replace(/\/+$/, "");
+	if (ann !== annotationDirForBookshelf(shelf)) return shelf;
+	const slash = shelf.lastIndexOf("/");
+	return slash > 0 ? shelf.slice(0, slash) : shelf;
+}
+
 /** 注入批注目录（设置加载/迁移后调用；非法值忽略）。 */
-export function setAnnotationSidecarDir(dir: string | undefined | null): void {
-	if (typeof dir !== "string") return;
+export function setAnnotationSidecarDir(dir: string | undefined | null): void {	if (typeof dir !== "string") return;
 	const normalized = normalizePath(dir).trim().replace(/^\/+|\/+$/g, "");
 	if (!normalized) return;
 	sidecarDir = normalized;
@@ -74,7 +90,7 @@ export function fingerprintSidecarPath(fingerprint: string, suffix = ".annotatio
 }
 
 /** 规范化为 vault 内路径（统一 `/`）。 */
-function normalizePath(p: string): string {
+export function normalizePath(p: string): string {
 	return (p ?? "").replace(/\\/g, "/");
 }
 
