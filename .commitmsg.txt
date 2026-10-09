@@ -1,9 +1,0 @@
-fix(bookshelf): 拖动放下无反应——dragend 松手坐标兜底移动 (v0.3.27)
-
-现象：拖动进入半透明状态（dragstart 生效），但放下仍无反应。
-根因：Obsidian 全局拖拽可能吞掉原生 drop 事件，区域上的 drop 没触发，
-字段兜底（依赖 drop 触发）也无从生效。
-修复：在必然触发的 dragend 里，用松手坐标 document.elementFromPoint 反查
-落在哪个区域（data-rel），若原生 drop 未处理（dropHandled 标记）则直接
-moveBook；原生 drop 已处理则跳过，避免重复移动。
-单测 99/99
