@@ -180,6 +180,16 @@ export interface IReaderEngine {
 	 * 避免把估计值当成精确值展示。
 	 */
 	isPageCountEstimated?(): boolean;
+
+	/**
+	 * 可选：**精确的当前页号**（1 起）与全书页数。
+	 *
+	 * 为什么不复用 `currentLocation()`：它是 0~10000 的百分比，四舍五入到 1/10000。
+	 * 页数多的书里 1 个 percent 单位就代表好几页（6000 页时 10000/6000 ≈ 1.67 单位/页），
+	 * 视图再从百分比反推页号，一次取整就会**跳十几页**。
+	 * 页号必须由引擎直接给出，不能从百分比反推。
+	 */
+	getCurrentPageInfo?(): { page: number; total: number; exact: boolean };
 	/**
 	 * 可选：当前是否处于**分页**模式（false = 连续滚动模式）。
 	 *

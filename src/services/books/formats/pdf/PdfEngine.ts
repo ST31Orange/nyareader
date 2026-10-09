@@ -277,6 +277,12 @@ export class PdfEngine implements IReaderEngine {
 		return !this.scrollModeActive();
 	}
 
+	/** **精确的当前页号**（1 起）+ 总页数（PDF 的页号本来就是权威值，无插值）。 */
+	getCurrentPageInfo(): { page: number; total: number; exact: boolean } {
+		const total = this.metrics.length || this.doc?.numPages || 0;
+		return { page: Math.max(1, this.currentPage), total: Math.max(0, total), exact: true };
+	}
+
 	/** 当前是否为双页对开布局。 */
 	private spreadActive(): boolean {
 		return this.settings.layout === "double";

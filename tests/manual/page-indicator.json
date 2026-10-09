@@ -1,0 +1,173 @@
+{
+  "checks": [
+    {
+      "name": "单页：连续翻页到末页前，页号增量恒为 +1（不跳页）",
+      "pass": true
+    },
+    {
+      "name": "单页：最大增量 = 1（应为 1）",
+      "pass": true
+    },
+    {
+      "name": "单页：页号严格单调不减",
+      "pass": true
+    },
+    {
+      "name": "大书（1201 页）：连续翻页增量恒为 +1",
+      "pass": true
+    },
+    {
+      "name": "大书：页号严格单调递增到末页前",
+      "pass": true
+    },
+    {
+      "name": "双页：增量恒为 +2（实测 maxDelta=2）",
+      "pass": true
+    },
+    {
+      "name": "总页数在翻页中稳定（大书抖动 0 页 / 1201 页，≤ 2%）",
+      "pass": true
+    },
+    {
+      "name": "按章分页下总页数被标记为估计值",
+      "pass": true
+    },
+    {
+      "name": "单页：全程保持单调（无回退）",
+      "pass": true
+    }
+  ],
+  "pass": true,
+  "numbers": {
+    "single": {
+      "initial": {
+        "page": 1,
+        "total": 18,
+        "exact": true,
+        "totalPages": 18,
+        "estimated": true
+      },
+      "firstSteps": [
+        {
+          "page": 2,
+          "delta": 1,
+          "total": 18,
+          "loc": "833"
+        },
+        {
+          "page": 3,
+          "delta": 1,
+          "total": 18,
+          "loc": "1389"
+        },
+        {
+          "page": 4,
+          "delta": 1,
+          "total": 18,
+          "loc": "1944"
+        },
+        {
+          "page": 5,
+          "delta": 1,
+          "total": 18,
+          "loc": "2500"
+        },
+        {
+          "page": 6,
+          "delta": 1,
+          "total": 18,
+          "loc": "3056"
+        },
+        {
+          "page": 7,
+          "delta": 1,
+          "total": 18,
+          "loc": "3611"
+        },
+        {
+          "page": 8,
+          "delta": 1,
+          "total": 18,
+          "loc": "4167"
+        },
+        {
+          "page": 9,
+          "delta": 1,
+          "total": 18,
+          "loc": "4722"
+        }
+      ],
+      "maxDelta": 1,
+      "finalPage": 18
+    },
+    "big": {
+      "initial": {
+        "page": 1,
+        "total": 1201,
+        "exact": true,
+        "totalPages": 1201,
+        "estimated": true
+      },
+      "firstSteps": [
+        {
+          "page": 2,
+          "delta": 1,
+          "total": 1201,
+          "loc": "12"
+        },
+        {
+          "page": 3,
+          "delta": 1,
+          "total": 1201,
+          "loc": "21"
+        },
+        {
+          "page": 4,
+          "delta": 1,
+          "total": 1201,
+          "loc": "29"
+        },
+        {
+          "page": 5,
+          "delta": 1,
+          "total": 1201,
+          "loc": "37"
+        },
+        {
+          "page": 6,
+          "delta": 1,
+          "total": 1201,
+          "loc": "46"
+        },
+        {
+          "page": 7,
+          "delta": 1,
+          "total": 1201,
+          "loc": "54"
+        },
+        {
+          "page": 8,
+          "delta": 1,
+          "total": 1201,
+          "loc": "62"
+        },
+        {
+          "page": 9,
+          "delta": 1,
+          "total": 1201,
+          "loc": "71"
+        }
+      ],
+      "maxDelta": 1,
+      "legacyJumps": 0,
+      "steps": 60,
+      "totalSpread": 0,
+      "finalPage": 61
+    },
+    "double": {
+      "maxDelta": 2,
+      "expectedStep": 2,
+      "finalPage": 29
+    }
+  }
+}

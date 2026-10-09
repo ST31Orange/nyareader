@@ -1343,8 +1343,26 @@ export class HtmlDocEngine implements IReaderEngine {
 	 * 回退模式（chapterPagedPagination:false）或所有章节都已测量时返回 false。
 	 */
 	isPageCountEstimated(): boolean {
-		this.flushPendingContent();
-		return this.isPaged() ? this.pagesEstimated : false;
+		if (!this.isPaged()) return false;
+		if (!this.windowedChapters()) return false;
+		const info = this.getTotalPagesInfo();
+		return info.estimated === true;
+	}
+
+	/**
+	 * **精确的当前页号**（1 起）+ 全书页数。
+	 *
+	 * 视图绝不能从 `currentLocation()`（百分比）反推页号：1/10000 的取整误差
+	 * 在大书上就是十几页的跳动。这里直接给出引擎内部的 `currentPage`。
+	 */
+	getCurrentPageInfo(): { page: number; total: number; exact: boolean } {
+		const total = this.windowedChapters() ? this.pages : this.isPaged() ? this.pages : 0;
+		return {
+			page: Math.max(1, this.currentPage),
+			total: Math.max(0, total),
+			// "exact" 指**当前页号**是否精确（按章布局下 isPageCountEstimated 只说明总页数是估计）
+			exact: true,
+		};
 	}
 
 	/** 总页数明细（页码来源、窗口、估计占比）——视图层与诊断用。 */

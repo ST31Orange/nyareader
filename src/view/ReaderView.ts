@@ -614,14 +614,25 @@ export class ReaderView extends ItemView {
 		if (!this.pageIndicatorEl) return;
 		const engine = this.controller?.currentEngine;
 		const book = this.controller?.currentBook;
-		// PDF 的 location 就是页码；HTML/TXT 分页模式的 location 是 0~10000 百分比
-		const isPct = Boolean(engine?.capabilities?.pageNav) && book?.format !== "pdf";
-		const page = displayPageFromLocation(location, this.totalPages, isPct);
+		// 优先用引擎给出的**精确页号**：`location` 只是 0~10000 的百分比，
+		// 页数多的书里 1 个 percent 单位代表好几页，从它反推页号会**跳十几页**。
+		const info = engine?.getCurrentPageInfo?.();
+		let page: number;
+		let total: number;
+		if (info && Number.isFinite(info.page)) {
+			page = Math.max(1, info.page);
+			total = info.total > 0 ? info.total : this.totalPages;
+		} else {
+			// 引擎未实现（旧引擎）：退回按定位符换算
+			const isPct = Boolean(engine?.capabilities?.pageNav) && book?.format !== "pdf";
+			page = displayPageFromLocation(location, this.totalPages, isPct);
+			total = this.totalPages;
+		}
 		this.currentPageNumber = Number.isFinite(page) ? page : Number.NaN;
 		// 大文件懒加载期间：总页数还只是"已加载部分的页数"，显示为 "N / — 页"；
 		// 按章独立分页时总页数是插值估计（实测偏差约 +6%），加 ≈ 标明。
 		const estimated = engine?.isPageCountEstimated?.() === true;
-		this.pageIndicatorEl.setText(formatPageIndicator(page, this.totalPages, this.contentFullyLoaded, estimated));
+		this.pageIndicatorEl.setText(formatPageIndicator(page, total, this.contentFullyLoaded, estimated));
 	}
 
 	/**

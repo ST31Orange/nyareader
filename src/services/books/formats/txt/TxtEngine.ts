@@ -84,6 +84,20 @@ export class TxtEngine implements IReaderEngine {
 		return this.isPaged();
 	}
 
+	/**
+	 * **精确的当前页号**（1 起）+ 全书页数。
+	 *
+	 * 视图不能从 `currentLocation()`（百分比）反推页号，否则大书上会跳页。
+	 * TXT 的页数按"段落总高 / 视口高"算出（等高、无插值），所以由进度直接换算即精确。
+	 */
+	getCurrentPageInfo(): { page: number; total: number; exact: boolean } {
+		if (!this.isPaged()) return { page: 0, total: 0, exact: true };
+		const total = this.getTotalPages();
+		if (total <= 0) return { page: 1, total: 0, exact: true };
+		const page = Math.max(1, Math.min(total, Math.round(this.currentPercentage() * total) || 1));
+		return { page, total, exact: true };
+	}
+
 	private paragraphs: string[] = [];
 	private chapters: TxtContent["chapters"] = [];
 	/** 每段高度（估算 -> 测量修正）；类型化数组避免 50 万段的堆分配峰值 */
