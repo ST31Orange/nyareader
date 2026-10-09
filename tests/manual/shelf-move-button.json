@@ -1,0 +1,69 @@
+{
+  "checks": [
+    {
+      "name": "按钮定位为 absolute（相对卡片）",
+      "pass": true
+    },
+    {
+      "name": "按钮在卡片**左上角**（偏移 7,7）",
+      "pass": true
+    },
+    {
+      "name": "按钮确实在卡片左半区",
+      "pass": true
+    },
+    {
+      "name": "按钮确实在卡片上半区",
+      "pass": true
+    },
+    {
+      "name": "默认 opacity=0（不悬停看不见）",
+      "pass": true
+    },
+    {
+      "name": "**不与右上角删除按钮重叠**",
+      "pass": true
+    },
+    {
+      "name": "点按钮**不冒泡**到卡片（不会误触发打开书）",
+      "pass": true
+    }
+  ],
+  "pass": true,
+  "numbers": {
+    "card": {
+      "left": 47,
+      "top": 53,
+      "right": 215,
+      "bottom": 267,
+      "w": 168,
+      "h": 214
+    },
+    "move": {
+      "left": 54,
+      "top": 60,
+      "right": 76,
+      "bottom": 82,
+      "w": 22,
+      "h": 22
+    },
+    "del": {
+      "left": 186,
+      "top": 60,
+      "right": 208,
+      "bottom": 82,
+      "w": 22,
+      "h": 22
+    },
+    "offsetFromCard": {
+      "left": 7,
+      "top": 7
+    },
+    "opacityDefault": "0",
+    "position": "absolute",
+    "overlapsDelete": false,
+    "isLeftOfCenter": true,
+    "isTopHalf": true,
+    "cardClicks": 0
+  }
+}

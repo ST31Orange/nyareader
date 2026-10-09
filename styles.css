@@ -1275,6 +1275,39 @@
 .nyareader-zoom-select.is-scroll-format option[value="fit-height"] {
 	display: none;
 }
+/* 卡片左上角的「移出书库」按钮：悬停出现，与右上角删除按钮对称 */
+.nyareader-shelf-card-move {
+	position: absolute;
+	top: 6px;
+	left: 6px;
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	border: none;
+	border-radius: 50%;
+	background: rgba(0, 0, 0, 0.45);
+	color: #fff;
+	cursor: pointer;
+	opacity: 0;
+	transition: opacity 0.12s ease;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 2;
+}
+.nyareader-shelf-card-move svg {
+	width: 14px;
+	height: 14px;
+}
+.nyareader-shelf-card:hover .nyareader-shelf-card-move {
+	opacity: 1;
+}
+/* 列表模式：行高较矮，垂直居中更自然 */
+.nyareader-shelf-card.is-list .nyareader-shelf-card-move {
+	top: 50%;
+	transform: translateY(-50%);
+}
+
 .nyareader-shelf-card-del {
 	position: absolute;
 	top: 6px;

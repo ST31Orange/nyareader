@@ -553,6 +553,7 @@ export class BookshelfView extends ItemView {
 			row.createSpan({ cls: "nyareader-shelf-list-title", text: entry?.title ?? base });
 			row.createSpan({ cls: "nyareader-shelf-cover-ext is-mini", text: ext.toUpperCase() });
 			row.createSpan({ cls: "nyareader-shelf-list-pct", text: `${Math.round((entry?.progress?.percentage ?? 0) * 100)}%` });
+			this.attachMoveOutButton(card, path);
 			const del = card.createEl("button", { text: "✕", cls: "nyareader-shelf-card-del" });
 			del.addEventListener("click", (e) => { e.stopPropagation(); void this.deleteBook(path); });
 			return card;
@@ -622,9 +623,33 @@ export class BookshelfView extends ItemView {
 			meta.createSpan({ cls: "nyareader-shelf-card-meta-text", text: `${Math.round(progress * 100)}%${entry?.lastOpenedAt ? ` · ${this.fmtTime(entry.lastOpenedAt)}` : ""}` });
 		}
 
+		this.attachMoveOutButton(card, path);
 		const del = card.createEl("button", { text: "✕", cls: "nyareader-shelf-card-del" });
 		del.addEventListener("click", (e) => { e.stopPropagation(); void this.deleteBook(path); });
 		return card;
+	}
+
+	/**
+	 * 卡片**左上角**的「移出」按钮（悬停出现）。
+	 *
+	 * 为什么要有它：Obsidian 文件栏只接受它自己 `dragManager` 的内部拖动，
+	 * "从书架拖到文件栏"在 Obsidian 里做不到 —— 所以移出书库需要这个显式入口。
+	 * 用纯图标按钮而不是 "⇱" 之类的字符，避免字体差异导致显示不一致。
+	 */
+	private attachMoveOutButton(card: HTMLElement, path: string): void {
+		const btn = card.createEl("button", {
+			cls: "nyareader-shelf-card-move",
+			attr: { title: "移出书库…（移到 vault 里的其它目录）", "aria-label": "移出书库" },
+		});
+		setIcon(btn, "folder-output");
+		// stopPropagation：否则会触发卡片 click（打开书）
+		btn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			e.preventDefault();
+			this.pickFolderAndMoveOut(path);
+		});
+		// 拖动相关事件也让卡片自己处理
+		btn.addEventListener("mousedown", (e) => e.stopPropagation());
 	}
 
 	// ---------- 拖放 ----------
