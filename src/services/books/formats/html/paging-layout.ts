@@ -77,13 +77,15 @@ export interface PageLayout {
  * - 页宽/页高永不超过可用空间，并有下限。
  */
 export function computePageLayout(input: PageLayoutInput): PageLayout {
-	const gutter = input.double ? GUTTER_DOUBLE : GUTTER_SINGLE;
-	const pageMarginX = input.double ? PAGE_MARGIN_X_DOUBLE : PAGE_MARGIN_X_SINGLE;
 	const availW = Math.max(MIN_PAGE_WIDTH, Math.floor(input.viewWidth - (BOOK_MARGIN + SAFETY) * 2));
 	const availH = Math.max(MIN_PAGE_HEIGHT, Math.floor(input.viewHeight - (BOOK_MARGIN + SAFETY) * 2));
 
-	const widthForDouble = (availW - gutter) / 2 - pageMarginX * 2;
+	// 先用「双页」尺寸估算是否真的能对开；退单页后槽宽/页边距必须用单页的值
+	// （回归：旧实现按 input.double 取，窄窗退回单页时误用了双页的 30/18）
+	const widthForDouble = (availW - GUTTER_DOUBLE) / 2 - PAGE_MARGIN_X_DOUBLE * 2;
 	const double = input.double && availW >= MIN_SPREAD_WIDTH && widthForDouble >= MIN_SPREAD_PAGE_WIDTH;
+	const gutter = double ? GUTTER_DOUBLE : GUTTER_SINGLE;
+	const pageMarginX = double ? PAGE_MARGIN_X_DOUBLE : PAGE_MARGIN_X_SINGLE;
 
 	// 单页：可用宽 - 左右页边距；双页：再减去槽宽后对半
 	const rawWidth = double ? widthForDouble : availW - pageMarginX * 2;

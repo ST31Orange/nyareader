@@ -82,6 +82,8 @@
 	display: flex;
 	min-height: 0;
 	position: relative;
+	/* 阅读区按「容器宽度」（pane 宽度）响应：侧栏分屏把 pane 拉窄时窗口未必窄 */
+	container-type: inline-size;
 }
 .nyareader-toc-panel {
 	width: 0;
@@ -95,12 +97,61 @@
 .nyareader-toc-panel.is-open {
 	width: 240px;
 }
+/*
+ * 阅读区（宿主层壳）：只提供「尺寸 + 行宽约束 + 最小安全内边距」。
+ * 正文页边距（body margin / PAGE_MARGIN_X / OUTER_PAD）由引擎和设置里的 margin 负责，
+ * 宿主不再叠加固定 padding —— 旧实现 padding:20px 28px 与引擎留白叠加后左右达 ~66px。
+ */
 .nyareader-reading {
+	/* 宿主内边距：默认收到最小安全边；主题或用户 CSS 片段可覆盖这两个变量 */
+	--nyar-reading-pad-x: 8px;
+	--nyar-reading-pad-y: 6px;
+	/* 正文行宽上限：74ch 与 720px 取小者，超宽窗口下居中约束，避免一行 150+ 字符 */
+	--nyar-measure: min(74ch, 720px);
 	flex: 1;
 	min-width: 0;
-	overflow: auto;
-	padding: 20px 28px;
+	/* flex 子项允许收缩到内容高度以下，窗口缩小时不会把页面顶出容器 */
+	min-height: 0;
+	overflow: hidden;
+	padding: var(--nyar-reading-pad-y) var(--nyar-reading-pad-x);
+	position: relative;
 	background: var(--background-primary);
+}
+/* 打开进行中：遮罩已吞掉阅读区点击，光标提示"正在忙" */
+.nyareader-reading.is-loading {
+	cursor: progress;
+}
+/* 窄窗口（真窗口变窄）收紧内边距，把宽度让给正文 */
+@media (max-width: 719px) {
+	.nyareader-reading {
+		--nyar-reading-pad-x: 4px;
+		--nyar-reading-pad-y: 4px;
+	}
+}
+/* 窄容器（侧栏分屏把阅读 pane 拉窄、但窗口本身不窄）同样收紧 */
+@container (max-width: 719px) {
+	.nyareader-reading {
+		--nyar-reading-pad-x: 4px;
+		--nyar-reading-pad-y: 4px;
+	}
+}
+
+/*
+ * HTML 文档式阅读（EPUB/MOBI/AZW3）：内容是 iframe 内的完整文档，宿主只给尺寸与行宽约束。
+ * - display/width/height/min-height 显式声明，避免 iframe 被 flex/inline 行为顶出阅读区；
+ * - max-width 走 --nyar-measure 并居中：超宽窗口下正文不再无限拉宽（原来一行 150+ 字符），
+ *   窄窗口下 width:100% 更小，优先贴合容器，不会产生横向滚动条；
+ * - 不设固定高度、不加 overflow 限制：图片与长页面在 iframe 内部滚动，宿主不裁切。
+ */
+.nyareader-html-iframe {
+	display: block;
+	width: 100%;
+	height: 100%;
+	min-height: 0;
+	max-width: var(--nyar-measure, 720px);
+	margin-inline: auto;
+	border: 0;
+	background: transparent;
 }
 .nyareader-trans-host {
 	--nyareader-trans-width: 320px;
@@ -435,18 +486,31 @@
 	user-select: text;
 }
 
-/* 引擎加载中提示（EPUB 大书首屏前显示，避免被误认为白屏） */
+/* 引擎加载中提示（大文件读取/解析/排版期间显示；文案含阶段与百分比） */
 .nyareader-engine-loading {
 	position: absolute;
 	inset: 0;
 	display: flex;
 	align-items: center;
 	justify-content: center;
+	text-align: center;
+	line-height: 1.6;
+	padding: 12px;
 	color: var(--text-muted);
 	font-size: 14px;
 	z-index: 5;
-	pointer-events: none;
+	/* 打开期间吞掉阅读区内的点击：避免对着未就绪的按钮反复点（用户会以为按钮失灵） */
+	pointer-events: auto;
 	background: var(--background-primary);
+}
+.nyareader-engine-loading-text {
+	max-width: 34ch;
+	font-variant-numeric: tabular-nums;
+}
+/* 打开进行中：相关控件视觉禁用（逻辑侧同时拦截点击与快捷键） */
+.nyareader-control-disabled {
+	opacity: 0.45;
+	pointer-events: none;
 }
 
 /* ===== 目录面板 ===== */

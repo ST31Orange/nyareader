@@ -90,6 +90,12 @@ export interface IReaderEngine {
 	switchMode?(scrollMode: boolean): void;
 	/** 可选：按方向键逐行滚动（滚动模式下 ↑/↓ 用；方向 1=向下，-1=向上） */
 	scrollStep?(direction: 1 | -1): void;
+	/**
+	 * 可选：文档式引擎的"追加内容"入口（大文件分章懒加载用）。
+	 * 实现方负责把 html 追加到正文末尾、必要时重排并保持当前阅读位置；
+	 * 未实现时调用方必须用可选链安全跳过。
+	 */
+	notifyContentAppended?(html: string): void;
 	destroy(): void;
 }
 

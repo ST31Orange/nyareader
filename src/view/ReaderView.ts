@@ -14,6 +14,7 @@ import { ItemView, Menu, Notice, TFile, WorkspaceLeaf, setIcon } from "obsidian"
 import type NyaReaderPlugin from "../main";
 import { TranslationPanel } from "./TranslationPanel";
 import { ReaderController } from "./ReaderController";
+import type { ReaderControllerEvents } from "./ReaderController";
 import { AnnotationListModal } from "./AnnotationListModal";
 import { PromptModal } from "./components/PromptModal";
 import type { ZoomMode } from "../services/books/IReaderEngine";
@@ -22,6 +23,32 @@ import { debounce } from "../utils/debounce";
 import { displayPageFromLocation } from "../utils/paging";
 
 export { READER_VIEW_TYPE } from "./ReaderViewTypes";
+
+/**
+ * 控制器事件 + 打开阶段回调。
+ * onStage 由 Stream B 在 ReaderControllerEvents 上新增；这里用交叉类型声明，
+ * 无论对方是否已落地都不会破坏类型检查（对方落地后签名一致，直接兼容）。
+ */
+type ReaderViewEvents = ReaderControllerEvents & {
+	onStage?: (stage: string, detail?: { loaded: number; total: number }) => void;
+};
+
+/** 引擎上报的打开阶段 -> 用户可读文案（未知阶段原样显示，不抛异常）。 */
+const STAGE_LABELS: Record<string, string> = {
+	read: "正在读取文件",
+	reading: "正在读取文件",
+	load: "正在读取文件",
+	parse: "正在解析内容",
+	parsing: "正在解析内容",
+	decompress: "正在解压内容",
+	render: "正在排版渲染",
+	rendering: "正在排版渲染",
+	mount: "正在准备阅读界面",
+	mounting: "正在准备阅读界面",
+	index: "正在建立索引",
+	toc: "正在生成目录",
+	done: "即将完成",
+};
 
 const LANGUAGE_OPTIONS = [
 	{ value: "zh-Hans", label: "简体中文" },
@@ -64,6 +91,20 @@ export class ReaderView extends ItemView {
 	private headerAnchorEl: HTMLElement | null = null;
 	/** 当前书总页数（分页格式用于页码指示） */
 	private totalPages = 0;
+	/**
+	 * 打开流程进行中（大文件读取/解析/排版）：此期间忽略模式/布局切换、翻页快捷键与
+	 * 批注类操作，并在 UI 上禁用相关控件，避免"点了没反应"被当成按钮失灵。
+	 */
+	private busy = false;
+	/** 引擎已挂载且可用（打开成功后置位）；引擎/capabilities 缺失时全部读取安全降级。 */
+	private ready = false;
+	/** 加载遮罩（复用 .nyareader-engine-loading），打开完成或出错后必定移除。 */
+	private loadingEl: HTMLElement | null = null;
+	private loadingTextEl: HTMLElement | null = null;
+	/** 打开期间需要视觉禁用的控件（表单控件会被真正 disabled） */
+	private busyControls: HTMLElement[] = [];
+	/** 打开期间用户又选了一本书：等当前流程收尾后补开，避免并发挂载引擎 */
+	private pendingFile: TFile | null = null;
 
 	private saveUiDebounced = debounce(() => void this.plugin.saveSettings(), 400);
 
@@ -103,11 +144,15 @@ export class ReaderView extends ItemView {
 		this.transHost = this.bodyEl.createDiv({ cls: "nyareader-trans-host" });
 		this.applyPanelWidth();
 
-		this.controller = new ReaderController(this.plugin, {
+		// 用变量（非内联字面量）传入，兼容 onStage 尚未落地到 ReaderControllerEvents 的情况
+		const events: ReaderViewEvents = {
 			onBookOpened: (book) => this.onBookOpened(book),
-			onError: (message) => new Notice(`NyaReader：${message}`, 6000),
+			onError: (message) => this.onOpenError(message),
 			onProgress: () => undefined,
-		});
+			// 打开阶段（读取/解析/排版）→ 加载遮罩文案与百分比；未落地时该回调不会被调用
+			onStage: (stage, detail) => this.onStage(stage, detail),
+		};
+		this.controller = new ReaderController(this.plugin, events);
 
 		// 右侧翻译面板（引擎配置在 NyaLingo，此处只负责目标语言与展示）
 		this.transPanel = new TranslationPanel({
@@ -145,15 +190,96 @@ export class ReaderView extends ItemView {
 
 	// ---------- 打开书籍 ----------
 
-	/** 打开一本书：由主插件从命令/右键菜单调用。 */
+	/**
+	 * 打开一本书：由主插件从命令/右键菜单调用。
+	 * 打开期间进入 busy 态：显示加载遮罩（阶段+百分比）、禁用相关控件、忽略切换/翻页操作；
+	 * 打开完成或出错后必定移除遮罩并解除 busy（失败时给出 Notice）。
+	 */
 	async openBook(file: TFile): Promise<void> {
+		// 已有打开流程在跑：排队等它收尾，避免并发挂载引擎导致状态错乱
+		if (this.busy) {
+			this.pendingFile = file;
+			return;
+		}
+		this.setBusy(true);
+		this.ready = false;
 		this.currentFile = file;
 		this.updateTitle();
 		this.readingArea.empty();
-		await this.controller?.openBook(file, this.readingArea);
-		this.attachEngineListeners();
-		this.syncPagingUi();
-		this.focusReadingArea();
+		this.showLoading("正在打开…");
+		try {
+			await this.controller?.openBook(file, this.readingArea);
+		} catch (e) {
+			// 控制器内部已捕获解析/挂载异常，这里兜底保证 UI 不会卡在加载态
+			console.error("NyaReader: 打开书籍失败", e);
+			new Notice(`NyaReader：${e instanceof Error ? e.message : String(e)}`, 6000);
+		} finally {
+			this.hideLoading();
+			this.setBusy(false);
+			this.ready = Boolean(this.controller?.currentEngine);
+			this.attachEngineListeners();
+			this.syncPagingUi();
+			this.focusReadingArea();
+			const next = this.pendingFile;
+			this.pendingFile = null;
+			if (next && next !== file) void this.openBook(next);
+		}
+	}
+
+	/** 打开失败（解析/渲染异常）：移除加载遮罩并提示。 */
+	private onOpenError(message: string): void {
+		this.hideLoading();
+		new Notice(`NyaReader：${message}`, 6000);
+	}
+
+	// ---------- 加载态 / 忙态 ----------
+
+	/** 读取门槛：打开进行中或引擎未就绪时，阅读交互一律忽略。 */
+	private isReaderInteractive(): boolean {
+		return this.ready && !this.busy && Boolean(this.controller?.currentEngine);
+	}
+
+	/** 显示（或更新）加载遮罩文案。readingArea 被清空后会自动重建。 */
+	private showLoading(text: string): void {
+		if (!this.loadingEl?.isConnected) {
+			this.loadingEl = this.readingArea.createDiv({ cls: "nyareader-engine-loading" });
+			this.loadingTextEl = this.loadingEl.createDiv({ cls: "nyareader-engine-loading-text" });
+		}
+		this.loadingTextEl?.setText(text);
+	}
+
+	/** 移除加载遮罩（打开完成/出错/视图关闭都要调用）。 */
+	private hideLoading(): void {
+		this.loadingEl?.remove();
+		this.loadingEl = null;
+		this.loadingTextEl = null;
+	}
+
+	/** 控制器上报的打开阶段：文案含阶段与百分比（total 为 0 时只显示阶段）。 */
+	private onStage(stage: string, detail?: { loaded: number; total: number }): void {
+		if (!this.busy) return; // 打开已结束，迟到的阶段消息忽略
+		const key = typeof stage === "string" ? stage.trim() : "";
+		const label = STAGE_LABELS[key.toLowerCase()] ?? (key || "正在打开");
+		const total = Number(detail?.total ?? 0);
+		const loaded = Number(detail?.loaded ?? 0);
+		if (Number.isFinite(total) && total > 0 && Number.isFinite(loaded)) {
+			const percent = Math.max(0, Math.min(100, Math.round((loaded / total) * 100)));
+			this.showLoading(`${label}… ${percent}%`);
+			return;
+		}
+		this.showLoading(`${label}…`);
+	}
+
+	/** busy 态切换：禁用相关控件 + 阅读区加载光标。 */
+	private setBusy(busy: boolean): void {
+		this.busy = busy;
+		this.readingArea?.toggleClass("is-loading", busy);
+		for (const el of this.busyControls) {
+			if (!el?.isConnected) continue;
+			el.toggleClass("nyareader-control-disabled", busy);
+			el.setAttribute("aria-disabled", busy ? "true" : "false");
+			if (el instanceof HTMLButtonElement || el instanceof HTMLSelectElement) el.disabled = busy;
+		}
 	}
 
 	private focusReadingArea(): void {
@@ -170,15 +296,20 @@ export class ReaderView extends ItemView {
 
 	/** 监听引擎事件：位置（更新页码/进度）、选区（划词翻译）与缩放。 */
 	private attachEngineListeners(): void {
-		const engine = this.controller?.currentEngine;
-		if (!engine || !this.transPanel) return;
-		engine.on("locationChanged", (payload) => this.updatePageIndicator(payload.location));
-		engine.on("selection", (payload) => {
-			if (this.transPanel?.isVisible() && payload.text?.trim()) this.transPanel.translateSelection(payload.text);
-		});
-		engine.on("zoomChanged", (payload) => this.syncZoomUi(payload.mode, payload.percent));
-		const zoom = engine.getZoom?.();
-		if (zoom) this.syncZoomUi(zoom.mode, zoom.percent);
+		try {
+			const engine = this.controller?.currentEngine;
+			if (!engine || !this.transPanel) return;
+			engine.on("locationChanged", (payload) => this.updatePageIndicator(payload.location));
+			engine.on("selection", (payload) => {
+				if (this.transPanel?.isVisible() && payload.text?.trim()) this.transPanel.translateSelection(payload.text);
+			});
+			engine.on("zoomChanged", (payload) => this.syncZoomUi(payload.mode, payload.percent));
+			const zoom = engine.getZoom?.();
+			if (zoom) this.syncZoomUi(zoom.mode, zoom.percent);
+		} catch (e) {
+			// 引擎半初始化（capabilities/事件缺失）时不阻断阅读视图：降级为无事件监听
+			console.warn("NyaReader: 引擎事件挂载失败，已降级", e);
+		}
 	}
 
 	private syncHeaderControls(): void {
@@ -257,6 +388,7 @@ export class ReaderView extends ItemView {
 
 	/** 切换滚动/分页模式：写全局设置 + 当前书的覆盖，引擎同步保持位置。 */
 	private async toggleReadingMode(): Promise<void> {
+		if (!this.isReaderInteractive()) return; // 打开中/引擎未就绪：忽略，避免无效操作
 		const engine = this.controller?.currentEngine;
 		const book = this.controller?.currentBook;
 		if (!engine || !book || !engine.capabilities?.modeSwitch) return;
@@ -275,6 +407,7 @@ export class ReaderView extends ItemView {
 
 	/** 切换单页/双页布局：写全局设置 + 当前书覆盖，引擎按百分比原位刷新。 */
 	private async toggleLayout(): Promise<void> {
+		if (!this.isReaderInteractive()) return; // 打开中/引擎未就绪：忽略
 		const engine = this.controller?.currentEngine;
 		const book = this.controller?.currentBook;
 		if (!engine || !book || !engine.capabilities?.layoutSwitch) return;
@@ -305,14 +438,17 @@ export class ReaderView extends ItemView {
 	/** 标题栏按钮与信息条（公开 API addAction）。 */
 	private buildTitlebarActions(): void {
 		this.addAction("library", "书架", () => void this.openBookshelf());
-		this.addAction("folder-open", "打开电子书…", () => void this.plugin.pickAndOpenBook());
+		const openBtn = this.addAction("folder-open", "打开电子书…", () => void this.plugin.pickAndOpenBook());
 		this.addAction("list-tree", "目录", () => this.toggleToc());
 		this.translateActionEl = this.addAction("languages", "翻译（开/关）", () => this.toggleTranslate());
 		this.translateActionEl.addClass("nyareader-titlebar-action");
 		const highlightBtn = this.addAction("highlighter", "高亮选中文本", () => void this.addHighlight());
 		const noteBtn = this.addAction("pencil", "添加笔记", () => void this.addNote());
-		this.addAction("bookmark", "管理批注", () => this.openAnnotations());
+		const annotBtn = this.addAction("bookmark", "管理批注", () => this.openAnnotations());
 		const moreBtn = this.addAction("ellipsis-horizontal", "更多操作", (evt) => this.openMoreMenu(evt));
+
+		// 打开期间这些操作依赖已挂载的引擎：视觉禁用 + 逻辑侧拦截
+		this.busyControls.push(openBtn, highlightBtn, noteBtn, annotBtn, moreBtn);
 
 		// 用 addAction 返回元素的父节点定位标题栏动作区，避免硬编码内部类名
 		const row = moreBtn.parentElement;
@@ -377,9 +513,13 @@ export class ReaderView extends ItemView {
 
 		this.zoomPercentEl = container.createSpan({ cls: "nyareader-zoom-percent", text: "100%" });
 		container.toggleClass("is-hidden", true);
+
+		// 打开期间禁用：模式/布局切换与缩放控件（nudgeZoom 逻辑侧同时拦截）
+		this.busyControls.push(this.modeToggleEl, this.layoutToggleEl, zoomOut, this.zoomSelectEl, zoomIn);
 	}
 
 	private onZoomSelectChange(): void {
+		if (!this.isReaderInteractive()) return;
 		const engine = this.controller?.currentEngine;
 		if (!engine?.setZoom) return;
 		const v = this.zoomSelectEl.value;
@@ -393,6 +533,7 @@ export class ReaderView extends ItemView {
 	}
 
 	private nudgeZoom(factor: number): void {
+		if (!this.isReaderInteractive()) return;
 		const engine = this.controller?.currentEngine;
 		if (!engine?.setZoom || !engine.getZoom) return;
 		engine.setZoom("custom", engine.getZoom().scale * factor);
@@ -419,6 +560,7 @@ export class ReaderView extends ItemView {
 
 	/** 更多操作菜单（公开 Menu API）。 */
 	private openMoreMenu(evt: MouseEvent): void {
+		if (!this.isReaderInteractive()) return; // 打开中：菜单项大多依赖引擎，直接不开
 		const menu = new Menu();
 		menu.addItem((i) => i.setTitle("高亮选中文本").setIcon("highlighter").onClick(() => void this.addHighlight()));
 		menu.addItem((i) => i.setTitle("添加笔记").setIcon("pencil").onClick(() => void this.addNote()));
@@ -443,6 +585,7 @@ export class ReaderView extends ItemView {
 
 	/** 打开批注管理弹窗（列表 / 跳转 / 编辑笔记 / 删除）。 */
 	private openAnnotations(): void {
+		if (!this.isReaderInteractive()) return; // 打开中：避免读到旧书/半挂载状态
 		const controller = this.controller;
 		if (!controller) return;
 		new AnnotationListModal(this.app, {
