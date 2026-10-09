@@ -1,9 +1,9 @@
 {
 	"id": "nyareader",
 	"name": "NyaReader",
-	"version": "0.5.0",
+	"version": "1.0.0",
 	"minAppVersion": "1.5.0",
-	"description": "多格式电子书阅读器：书架管理、EPUB/PDF/MOBI/AZW3/TXT 阅读、即划即译（NyaLingo）与批注。",
+	"description": "多格式电子书阅读器：书架管理（支持与文件栏双向拖放）、EPUB/PDF/MOBI/AZW3/TXT 阅读、六色高亮与笔记批注、即划即译（NyaLingo）。支持把 Markdown 当书放进书架（点开走 Obsidian 原生页面）。",
 	"author": "NyaHome",
 	"isDesktopOnly": true
 }
