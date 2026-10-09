@@ -29,6 +29,8 @@ export class BookshelfView extends ItemView {
 	private sort: BookshelfSort = "recent";
 	private service!: BookshelfService;
 	private folders: BookshelfFolder[] = [];
+	/** 拖动中的书路径（dragstart 记录、dragend/放下后清空）。 */
+	private draggingBookPath: string | null = null;
 
 	constructor(leaf: WorkspaceLeaf, private plugin: NyaReaderPlugin) {
 		super(leaf);
@@ -212,11 +214,18 @@ export class BookshelfView extends ItemView {
 		// 跨区域拖动：把这本书移动到另一个区域 / 根目录
 		card.setAttribute("draggable", "true");
 		card.addEventListener("dragstart", (e) => {
+			// 记录到字段：Obsidian/Electron 里 drop 事件对自定义 MIME 类型读取不可靠，
+			// 用字段兜底确保放下时能拿到书路径
+			this.draggingBookPath = path;
 			e.dataTransfer?.setData("application/x-nyareader-book", path);
+			e.dataTransfer?.setData("text/plain", path);
 			if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
 			card.addClass("is-dragging");
 		});
-		card.addEventListener("dragend", () => card.removeClass("is-dragging"));
+		card.addEventListener("dragend", () => {
+			this.draggingBookPath = null;
+			card.removeClass("is-dragging");
+		});
 
 		if (mode === "list") {
 			// 列表式：一行显示书名 + 进度（网格三列）
@@ -359,10 +368,12 @@ export class BookshelfView extends ItemView {
 		el.addEventListener("dragleave", () => el.removeClass("nyareader-drag-over"));
 		el.addEventListener("drop", (e) => {
 			e.preventDefault();
+			e.stopPropagation(); // 避免 Obsidian 全局 DnD 拦截/把书当文件打开
 			el.removeClass("nyareader-drag-over");
-			// 书架内部卡片移动（跨区域拖动）
-			const bookPath = e.dataTransfer?.getData("application/x-nyareader-book");
+			// 书架内部卡片移动（跨区域拖动）：优先 dataTransfer，字段兜底
+			const bookPath = e.dataTransfer?.getData("application/x-nyareader-book") || this.draggingBookPath || "";
 			if (bookPath) {
+				this.draggingBookPath = null;
 				void this.moveBook(bookPath, relPath);
 				return;
 			}
