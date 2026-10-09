@@ -9,7 +9,7 @@ const esc = (s) =>
 		.map((c) => (c.charCodeAt(0) > 127 ? "\\u" + c.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0") : c))
 		.join("");
 
-const targets = ["默认翻页方式", "迁移位置", "请选一个空白文件夹", "library 与 annotations 一并搬走"];
+const targets = ["默认翻页方式", "迁移位置", "library 与 annotations 一并搬走", "目标下若已有同名"];
 const ws = readFileSync("main.js", "utf8");
 const vault = readFileSync(`${VAULT}/main.js`, "utf8");
 

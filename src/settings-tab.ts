@@ -99,8 +99,8 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 			.setName("迁移位置")
 			.setDesc(
 				`当前目录：${anchor}（书库在 ${shelfDir}，批注在 ${annotationDir}）。` +
-					`迁移时只填**上级目录**，例如 nyareader；程序会把 library 与 annotations 一起搬过去。` +
-					`目标目录可以是空文件夹，也可以不存在（会自动创建）。`
+					`迁移时只填**上级目录**（例如 nyareader、或 日历/NyaReader），程序会把 library 与 annotations 一起搬进去。` +
+					`目标可以不存在（自动创建），也可以是已有目录（例如 日历）；目标下若已有同名 library/annotations 会提示而不覆盖。`
 			)
 			.addButton((b) =>
 				b.setButtonText("迁移…").onClick(() => {
@@ -276,9 +276,10 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 		const { anchor, newShelfDir, newAnnDir } = plan;
 
 		try {
-			// ⚠️ 操作序列由纯函数 `migrationOps()` 给出（有单测锁住一条铁律：
-			// **"整体搬上级目录"绝不能预先创建目标目录**，否则必然
-			// `Destination file already exists` —— 用户连续两次踩的就是这个）。
+			// 操作序列由纯函数给出（有单测锁两条铁律）：
+			// ① 必须先 ensure-parent 再搬子目录（否则目标父目录不存在 → ENOENT）；
+			// ② 不再"整体搬上级目录" —— 那个操作要求目标父目录已存在且源恰好是二级目录，
+			//    在"搬二级目录"两种情况下都必然 ENOENT（用户实测）。
 			const ops = migrationOps(plan, oldParent, oldShelf, oldAnnotations);
 			if (!ops.length) {
 				new Notice("NyaReader：迁移计划为空，未做任何改动。");
@@ -291,16 +292,6 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 					case "ensure-parent":
 						await this.mkdirpVault(op.path);
 						break;
-					case "rename-parent": {
-						const parentFolder = app.vault.getAbstractFileByPath(op.from);
-						if (!(parentFolder instanceof TFolder)) {
-							new Notice("NyaReader：找不到当前目录，未做任何改动。");
-							return;
-						}
-						await app.vault.rename(parentFolder, op.to);
-						moved = true;
-						break;
-					}
 					case "move-shelf": {
 						const shelfFolder = app.vault.getAbstractFileByPath(op.from);
 						if (!(shelfFolder instanceof TFolder)) {
@@ -308,7 +299,7 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 							return;
 						}
 						if (app.vault.getAbstractFileByPath(op.to)) {
-							new Notice(`NyaReader：目标下已存在「${op.to}」，请换一个空白的上级目录。`, 8000);
+							new Notice(`NyaReader：目标下已存在「${op.to}」，请先清空或换一个目录。`, 10000);
 							return;
 						}
 						await adapter.rename(op.from, op.to);
@@ -329,6 +320,8 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 						}
 						break;
 					}
+					default:
+						break;
 				}
 			}
 			if (!moved) {
@@ -350,8 +343,7 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 			};
 			console.error("[NyaReader] 迁移失败", detail, e);
 			new Notice(
-				`NyaReader：迁移失败：${detail.error}\n（${plan.strategy === "whole-parent" ? "整体搬上级目录" : "分别搬子目录"}；` +
-					`${oldShelf} → ${plan.strategy === "whole-parent" ? anchor : newShelfDir}）`,
+				`NyaReader：迁移失败：${detail.error}\n（把 ${oldShelf} 搬进 ${anchor}）`,
 				12000
 			);
 		}

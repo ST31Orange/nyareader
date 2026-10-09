@@ -355,13 +355,13 @@ describe("迁移决策 planBookshelfMigration", () => {
 		shelfExists: true,
 	} as const;
 
-	it("用户填**上级目录**、目标不存在 → 整体搬上级目录（一次搬完两者）", () => {
+	it("用户填上级目录、目标不存在 → 仍然走「建目标 + 分别搬子目录」", () => {
 		const p = planBookshelfMigration({ ...base, rawTarget: "newhome", targetState: "missing" });
 		expect(p.error).toBeUndefined();
 		expect(p.anchor).toBe("newhome");
 		expect(p.newShelfDir).toBe("newhome/library");
 		expect(p.newAnnDir).toBe("newhome/annotations");
-		expect(p.strategy).toBe("whole-parent");
+		expect(p.strategy).toBe("move-children");
 		expect(p.siblings).toBe(true);
 	});
 
@@ -382,10 +382,12 @@ describe("迁移决策 planBookshelfMigration", () => {
 		expect(p.newAnnDir).toBe("deep/newhome/annotations");
 	});
 
-	it("目标目录非空 → 拒绝并给出可操作原因", () => {
-		const p = planBookshelfMigration({ ...base, rawTarget: "busy", targetState: "non-empty-folder" });
-		expect(p.error).toContain("已有内容");
-		expect(p.strategy).toBeUndefined();
+	it("目标目录非空也允许（例如搬进已有的「日历」目录）", () => {
+		const p = planBookshelfMigration({ ...base, rawTarget: "日历", targetState: "non-empty-folder" });
+		expect(p.error).toBeUndefined();
+		expect(p.anchor).toBe("日历");
+		expect(p.newShelfDir).toBe("日历/library");
+		expect(p.strategy).toBe("move-children");
 	});
 
 	it("目标被同名文件占用 → 拒绝", () => {
@@ -422,66 +424,70 @@ describe("迁移决策 planBookshelfMigration", () => {
 });
 
 /**
- * 回归（用户连续踩了两次）：`Destination file already exists`。
+ * 回归（用户连续踩了三次）：迁移失败。
  *
- * 两次根因相同 —— **先把目标目录建出来，再往里整体 rename**（或整体 rename 到已存在目录）。
- * 这里把"操作序列"固化成可断言的铁律，防止第三次。
+ * 前两次是 `Destination file already exists`（先建目标再整体 rename）；
+ * 第三次是 `ENOENT`（整体 rename 的目标父目录不存在 / 源不是二级目录）。
+ * 结论：**整体搬上级目录这条优化路径不可靠，已删除**，统一成
+ * "先建目标、再把 library 与 annotations 分别移进去"。
+ *
+ * 这里把操作序列固化成可断言的铁律，防止再犯。
  */
-describe("迁移操作序列 migrationOps（铁律：整体搬目录前绝不能创建目标）", () => {
+describe("迁移操作序列 migrationOps（统一为：先建目标，再搬子目录）", () => {
 	const oldAnchor = "nyareader";
 	const oldShelf = "nyareader/library";
 	const oldAnn = "nyareader/annotations";
 
-	it("整体搬上级目录：序列里**没有** ensure-parent，也不允许有", () => {
-		const plan = planBookshelfMigration({
+	const planFor = (rawTarget: string, targetState: "missing" | "empty-folder" | "non-empty-folder") =>
+		planBookshelfMigration({
 			bookshelfDir: oldShelf,
 			annotationDir: oldAnn,
 			shelfExists: true,
-			rawTarget: "newhome",
-			targetState: "missing",
+			rawTarget,
+			targetState,
 		});
-		expect(plan.strategy).toBe("whole-parent");
-		const ops = migrationOps(plan, oldAnchor, oldShelf, oldAnn);
-		expect(ops.map((o) => o.kind)).toEqual(["rename-parent"]);
-		expect(ops.some((o) => o.kind === "ensure-parent")).toBe(false);
-	});
 
-	it("目标已存在（空文件夹）：先建目录再分别搬子目录", () => {
-		const plan = planBookshelfMigration({
-			bookshelfDir: oldShelf,
-			annotationDir: oldAnn,
-			shelfExists: true,
-			rawTarget: "testmove",
-			targetState: "empty-folder",
-		});
-		expect(plan.strategy).toBe("move-children");
-		const ops = migrationOps(plan, oldAnchor, oldShelf, oldAnn);
+	it("目标不存在：先 ensure-parent，再 move-shelf / move-annotations", () => {
+		const ops = migrationOps(planFor("newhome", "missing"), oldAnchor, oldShelf, oldAnn);
 		expect(ops.map((o) => o.kind)).toEqual(["ensure-parent", "move-shelf", "move-annotations"]);
+		expect(ops[0]).toEqual({ kind: "ensure-parent", path: "newhome" });
 	});
 
-	/**
-	 * 这条是本次的核心不变式：只要序列里出现 `rename-parent`，
-	 * 就**不允许**在它之前出现任何创建该目标的动作。
-	 */
-	it("不变式：任何含 rename-parent 的序列，都不得预先创建目标", () => {
-		const cases = [
-			{ rawTarget: "newhome", targetState: "missing" as const },
-			{ rawTarget: "testmove", targetState: "empty-folder" as const },
-			{ rawTarget: "deep/a/b", targetState: "missing" as const },
-		];
-		for (const c of cases) {
-			const plan = planBookshelfMigration({
-				bookshelfDir: oldShelf,
-				annotationDir: oldAnn,
-				shelfExists: true,
-				rawTarget: c.rawTarget,
-				targetState: c.targetState,
-			});
-			const ops = migrationOps(plan, oldAnchor, oldShelf, oldAnn);
-			const renameIdx = ops.findIndex((o) => o.kind === "rename-parent");
-			if (renameIdx < 0) continue;
-			const createsBefore = ops.slice(0, renameIdx).filter((o) => o.kind === "ensure-parent" && o.path === plan.anchor);
-			expect(createsBefore, `案例 ${JSON.stringify(c)} 在整体 rename 前创建了目标`).toHaveLength(0);
+	it("目标已存在（空文件夹）：序列完全相同（不再区分目标存在与否）", () => {
+		const a = migrationOps(planFor("testmove", "empty-folder"), oldAnchor, oldShelf, oldAnn);
+		const b = migrationOps(planFor("testmove", "missing"), oldAnchor, oldShelf, oldAnn);
+		expect(a).toEqual(b);
+	});
+
+	it("二级目录目标（含多级父目录）：ensure-parent 带完整路径，交给 mkdirp 逐级创建", () => {
+		const ops = migrationOps(planFor("日历/NyaReader", "missing"), oldAnchor, oldShelf, oldAnn);
+		expect(ops[0]).toEqual({ kind: "ensure-parent", path: "日历/NyaReader" });
+		expect(ops[1]).toEqual({ kind: "move-shelf", from: oldShelf, to: "日历/NyaReader/library" });
+	});
+
+	it("铁律：序列里**绝不出现**整体搬上级目录（rename-parent 已移除）", () => {
+		for (const c of [
+			["newhome", "missing"],
+			["日历/NyaReader", "missing"],
+			["日历/NyaReader书库", "empty-folder"],
+			["日历", "non-empty-folder"],
+		] as const) {
+			const ops = migrationOps(planFor(c[0], c[1]), oldAnchor, oldShelf, oldAnn);
+			expect(ops.some((o) => (o.kind as string) === "rename-parent"), `案例 ${c[0]}`).toBe(false);
+		}
+	});
+
+	it("铁律：ensure-parent 必须排在所有搬移之前（否则目标父目录不存在 → ENOENT）", () => {
+		for (const c of [
+			["newhome", "missing"],
+			["日历/NyaReader", "missing"],
+			["日历", "non-empty-folder"],
+		] as const) {
+			const ops = migrationOps(planFor(c[0], c[1]), oldAnchor, oldShelf, oldAnn);
+			const ensureIdx = ops.findIndex((o) => o.kind === "ensure-parent");
+			const firstMoveIdx = ops.findIndex((o) => o.kind === "move-shelf" || o.kind === "move-annotations");
+			expect(ensureIdx, `案例 ${c[0]} 缺少 ensure-parent`).toBeGreaterThanOrEqual(0);
+			expect(ensureIdx, `案例 ${c[0]} 未先建目标`).toBeLessThan(firstMoveIdx);
 		}
 	});
 

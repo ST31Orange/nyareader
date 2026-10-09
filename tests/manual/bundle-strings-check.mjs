@@ -20,7 +20,7 @@ const targets = [
 	"滚动（连续向下滚）",
 	"迁移位置",
 	"迁移 NyaReader 目录",
-	"请选一个空白文件夹",
+	"目标下若已有同名",
 	"批注目录未能搬迁",
 	"library 与 annotations 一并搬走",
 	"默认版式",
@@ -32,7 +32,7 @@ for (const s of targets) {
 	const escaped = js.includes(esc(s));
 	const ok = direct || escaped;
 	if (!ok) allOk = false;
-	console.log(`${ok ? "✓" : "✗"} ${s.padEnd(22)} 原文=${direct} 转义=${escaped}`);
+	console.log(`${ok ? "✓" : "✗"} ${s.padEnd(26)} 原文=${direct} 转义=${escaped}`);
 }
 console.log(`\n${allOk ? "全部文案已进产物" : "有文案缺失！"}`);
 process.exitCode = allOk ? 0 : 1;
