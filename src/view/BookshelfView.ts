@@ -31,6 +31,8 @@ export class BookshelfView extends ItemView {
 	private folders: BookshelfFolder[] = [];
 	/** 拖动中的书路径（dragstart 记录、dragend/放下后清空）。 */
 	private draggingBookPath: string | null = null;
+	/** 原生 drop 是否已处理本次移动（避免 dragend 兜底重复移动）。 */
+	private dropHandled = false;
 
 	constructor(leaf: WorkspaceLeaf, private plugin: NyaReaderPlugin) {
 		super(leaf);
@@ -222,9 +224,18 @@ export class BookshelfView extends ItemView {
 			if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
 			card.addClass("is-dragging");
 		});
-		card.addEventListener("dragend", () => {
+		card.addEventListener("dragend", (e) => {
+			const wasHandled = this.dropHandled;
+			this.dropHandled = false;
 			this.draggingBookPath = null;
 			card.removeClass("is-dragging");
+			// 兜底：Obsidian 可能吞掉原生 drop，这里按松手坐标反查落在哪个区域再移动
+			if (!wasHandled && path) {
+				const el = document.elementFromPoint(e.clientX, e.clientY);
+				const zone = el?.closest?.(".nyareader-shelf-zone") as HTMLElement | null;
+				const rel = zone?.getAttribute("data-rel") ?? null;
+				if (rel !== null) void this.moveBook(path, rel);
+			}
 		});
 
 		if (mode === "list") {
@@ -374,6 +385,7 @@ export class BookshelfView extends ItemView {
 			const bookPath = e.dataTransfer?.getData("application/x-nyareader-book") || this.draggingBookPath || "";
 			if (bookPath) {
 				this.draggingBookPath = null;
+				this.dropHandled = true;
 				void this.moveBook(bookPath, relPath);
 				return;
 			}
