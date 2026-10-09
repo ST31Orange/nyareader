@@ -10,6 +10,7 @@ import {
 	extOf,
 	isReadableFile,
 	normalizeVaultPath,
+	opensInNativeEditor,
 	parseVaultDropPaths,
 	extractPathCandidates,
 } from "../src/utils/drop-paths";
@@ -38,6 +39,17 @@ describe("路径工具", () => {
 		expect(isReadableFile("x.markdown")).toBe(true);
 		expect(isReadableFile("x.png")).toBe(false);
 		expect(isReadableFile("x.json")).toBe(false);
+	});
+
+	it("opensInNativeEditor：只有 md 走 Obsidian 原生页面，其它格式走阅读器", () => {
+		// 用户要求：md 能当书拖进书架，但点开时用 Obsidian 默认页面
+		expect(opensInNativeEditor("notes/a.md")).toBe(true);
+		expect(opensInNativeEditor("notes/a.MD")).toBe(true);
+		expect(opensInNativeEditor("notes/a.markdown")).toBe(true);
+		expect(opensInNativeEditor("books/a.epub")).toBe(false);
+		expect(opensInNativeEditor("books/a.pdf")).toBe(false);
+		expect(opensInNativeEditor("books/a.txt")).toBe(false);
+		expect(opensInNativeEditor("books/a.mobi")).toBe(false);
 	});
 
 	it("normalizeVaultPath 处理反斜杠 / file:// / 前后斜杠 / 多斜杠", () => {

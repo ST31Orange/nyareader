@@ -85,13 +85,14 @@ describe("BookshelfService.loadLibraries / loadFolders", () => {
 		const libs = await svc.loadLibraries();
 		expect(libs.map((l) => l.relPath).sort()).toEqual(["我的书库", "英语"]);
 	});
-	it("书库内按文件夹分组，忽略书库根目录书与不支持格式", async () => {
+	it("书库内按文件夹分组，忽略书库根目录书；md 也算书", async () => {
 		const adapter = memAdapter(
 			[
 				"nyareader/library/我的书库/root.pdf",
 				"nyareader/library/我的书库/科幻/a.epub",
 				"nyareader/library/我的书库/科幻/b.mobi",
 				"nyareader/library/我的书库/科幻/note.md",
+				"nyareader/library/我的书库/科幻/cover.png",
 			],
 			["nyareader/library/我的书库", "nyareader/library/我的书库/科幻"]
 		);
@@ -99,7 +100,8 @@ describe("BookshelfService.loadLibraries / loadFolders", () => {
 		const folders = await svc.loadFolders("我的书库");
 		expect(folders.length).toBe(1);
 		expect(folders[0].relPath).toBe("科幻");
-		expect(folders[0].books.map((b) => b.name)).toEqual(["a", "b"]);
+		// md 进书架（当书管理），png 这类非书文件被过滤
+		expect(folders[0].books.map((b) => b.name)).toEqual(["a", "b", "note"]);
 		expect(folders[0].books[0].author).toBe("A");
 	});
 	it("library 目录不存在时返回空", async () => {
@@ -119,13 +121,20 @@ describe("BookshelfService.create / import / delete / rename / move", () => {
 		expect(await svc.createFolder("我的书库", " 玄幻/新 ")).toBe(true);
 		expect(await svc.createFolder("我的书库", " 玄幻/新 ")).toBe(false);
 	});
-	it("导入文件写入书库内的文件夹并过滤不支持格式", async () => {
+	it("导入文件写入书库内的文件夹并过滤不支持格式（md 现在算书）", async () => {
 		const adapter = memAdapter([], []);
 		const svc = new BookshelfService(adapter, LIB, () => undefined);
 		const data = new TextEncoder().encode("abc").buffer as ArrayBuffer;
-		const ok = await svc.importFiles([{ name: "x.epub", data }, { name: "y.md", data }], "我的书库", "科幻");
-		expect(ok).toBe(1);
-		expect(adapter.writes[0].path).toBe("nyareader/library/我的书库/科幻/x.epub");
+		const ok = await svc.importFiles(
+			[{ name: "x.epub", data }, { name: "y.md", data }, { name: "z.png", data }],
+			"我的书库",
+			"科幻"
+		);
+		expect(ok).toBe(2); // x.epub + y.md；z.png 被过滤
+		expect(adapter.writes.map((w) => w.path)).toEqual([
+			"nyareader/library/我的书库/科幻/x.epub",
+			"nyareader/library/我的书库/科幻/y.md",
+		]);
 	});
 	it("重命名书库（移动一级目录）", async () => {
 		const adapter = memAdapter(["nyareader/library/旧库/科幻/a.epub"], ["nyareader/library/旧库", "nyareader/library/旧库/科幻"]);
@@ -173,10 +182,12 @@ describe("BookshelfService.sortBooks", () => {
 });
 
 describe("SUPPORTED_BOOK_EXT", () => {
-	it("覆盖全部目标格式", () => {
-		for (const ext of ["epub", "pdf", "mobi", "azw3", "azw", "txt"]) expect(SUPPORTED_BOOK_EXT.has(ext)).toBe(true);
+	it("覆盖全部目标格式（含 md：可以当书放进书架）", () => {
+		for (const ext of ["epub", "pdf", "mobi", "azw3", "azw", "txt", "md", "markdown"]) {
+			expect(SUPPORTED_BOOK_EXT.has(ext)).toBe(true);
+		}
 	});
-	it("不含其它类型", () => {
-		expect(SUPPORTED_BOOK_EXT.has("md")).toBe(false);
+	it("不含非书类型", () => {
+		for (const ext of ["png", "jpg", "json", "pdfx", "txtx"]) expect(SUPPORTED_BOOK_EXT.has(ext)).toBe(false);
 	});
 });

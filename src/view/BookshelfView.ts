@@ -15,7 +15,7 @@ import { PromptModal } from "./components/PromptModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { BOOKSHELF_MODE_LABEL, BookshelfDisplayMode, DEFAULT_BOOKSHELF_DIR } from "../settings";
 import readerIcon from "../assets/reader.png";
-import { parseVaultDropPaths } from "../utils/drop-paths";
+import { parseVaultDropPaths, opensInNativeEditor } from "../utils/drop-paths";
 
 const SORT_OPTIONS: Array<{ value: BookshelfSort; label: string }> = [
 	{ value: "recent", label: "最近阅读" },
@@ -44,6 +44,8 @@ export class BookshelfView extends ItemView {
 	private draggingFolder: string | null = null;
 	/** 原生 drop 是否已处理本次拖动（避免 dragend 兜底重复处理） */
 	private dropHandled = false;
+	/** 刚刚结束了一次拖动：用于吞掉浏览器补发的那次 click（否则松手就会打开书） */
+	private dragJustEnded = false;
 
 	constructor(leaf: WorkspaceLeaf, private plugin: NyaReaderPlugin) {
 		super(leaf);
@@ -409,10 +411,18 @@ export class BookshelfView extends ItemView {
 		card.className = `nyareader-shelf-card is-${mode}`;
 		// 供 syncProgressFromIndex() 就地刷新进度（不重建 DOM）
 		card.setAttribute("data-path", path);
-		card.addEventListener("click", () => void this.openBook(path));
+		card.addEventListener("click", () => {
+			// 拖动后浏览器可能仍补一次 click → 会"松手就打开书"。拖动过就忽略这次 click。
+			if (this.dragJustEnded) {
+				this.dragJustEnded = false;
+				return;
+			}
+			void this.openBook(path);
+		});
 		card.setAttribute("draggable", "true");
 		card.addEventListener("dragstart", (e) => {
 			this.draggingBookPath = path;
+			this.dragJustEnded = false;
 			const dt = e.dataTransfer;
 			if (dt) {
 				// 内部拖动：我们自己的 MIME（书架内移动）
@@ -432,6 +442,8 @@ export class BookshelfView extends ItemView {
 		});
 		card.addEventListener("dragend", (e) => {
 			card.removeClass("is-dragging");
+			// 标记"刚拖动过"，让紧随其后的 click 不打开书（拖出去移动/拖回书架都不该打开）
+			this.dragJustEnded = true;
 			const wasHandled = this.dropHandled;
 			this.dropHandled = false;
 			const dragged = this.draggingBookPath;
@@ -889,11 +901,26 @@ export class BookshelfView extends ItemView {
 
 	// ---------- 工具 ----------
 
+	/**
+	 * 点开书架上的条目。
+	 *
+	 * **Markdown 走 Obsidian 原生页面**（用户明确要求）：不进阅读器，
+	 * 用原生笔记视图打开，编辑体验与平时完全一致。
+	 * 其它格式仍走阅读器。
+	 */
 	private async openBook(path: string): Promise<void> {
 		const f = this.plugin.app.vault.getAbstractFileByPath(path);
-		if (f instanceof TFile) await this.plugin.openBookFile(f);
-		else new Notice("NyaReader：文件不存在或已被移动。");
-	}
+		if (!(f instanceof TFile)) {
+			new Notice("NyaReader：文件不存在或已被移动。");
+			return;
+		}
+		if (opensInNativeEditor(path)) {
+			const leaf = this.app.workspace.getLeaf("tab");
+			await leaf.openFile(f);
+			this.app.workspace.revealLeaf(leaf);
+			return;
+		}
+		await this.plugin.openBookFile(f);	}
 
 	private async mkdirpParent(filePath: string): Promise<void> {
 		const idx = filePath.lastIndexOf("/");

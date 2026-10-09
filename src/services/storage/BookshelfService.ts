@@ -13,7 +13,14 @@ import type { BookFormat } from "../../types";
 import { legacySidecarPaths } from "../../utils/annotation-sidecar-path";
 
 /** 支持的电子书扩展名（书架只列这些）。 */
-export const SUPPORTED_BOOK_EXT = new Set(["epub", "pdf", "mobi", "azw3", "azw", "txt"]);
+/**
+ * 书架上允许出现的文件类型。
+ *
+ * 含 `md`：Markdown 笔记也能当"书"放进书架、参与拖放与整理；
+ * 但**点开时走 Obsidian 原生页面**（见 BookshelfView.openBook），不进阅读器 ——
+ * 这样既能用书架管理笔记，又完全不干扰 Obsidian 自己的编辑体验。
+ */
+export const SUPPORTED_BOOK_EXT = new Set(["epub", "pdf", "mobi", "azw3", "azw", "txt", "md", "markdown"]);
 
 export interface BookshelfAdapter {
 	list(path: string): Promise<{ files: string[]; folders: string[] }>;

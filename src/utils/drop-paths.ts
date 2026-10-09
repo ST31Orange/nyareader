@@ -40,6 +40,17 @@ export function isReadableFile(path: string): boolean {
 }
 
 /**
+ * 是否应该交给 **Obsidian 原生页面** 打开（而不是 NyaReader 阅读器）。
+ *
+ * 目前只有 Markdown：它既能当"书"放进书架（便于整理/拖放），
+ * 点开时又必须走原生笔记视图 —— 否则会干扰 Obsidian 的编辑体验。
+ */
+export function opensInNativeEditor(path: string): boolean {
+	const ext = extOf(path);
+	return ext === "md" || ext === "markdown";
+}
+
+/**
  * 规范化成 vault 相对路径。
  *
  * 处理：反斜杠 → `/`、去掉 `./`、去掉前后的 `/`、

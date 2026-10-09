@@ -189,6 +189,12 @@ export default class NyaReaderPlugin extends Plugin {
 
 	async openBookFile(file: TFile): Promise<void> {
 		const ext = file.extension.toLowerCase();
+		// Markdown 不进阅读器：它是"可以放进书架的书"，但点开用 Obsidian 原生页面。
+		// 这里给一句明确提示，避免用户从别处调用时看到含糊的"不支持该格式"。
+		if (ext === "md" || ext === "markdown") {
+			new Notice("NyaReader：Markdown 用 Obsidian 原生页面打开（在书架里点它即可）。", 5000);
+			return;
+		}
 		if (!SUPPORTED_EXT.has(ext)) {
 			new Notice("NyaReader：不支持该格式。");
 			return;
