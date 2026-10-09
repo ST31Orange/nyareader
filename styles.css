@@ -1100,8 +1100,8 @@
 	color: var(--text-normal);
 }
 .nyareader-donate-box img {
-	width: 120px;
-	height: 120px;
+	width: 200px;
+	height: 200px;
 	border: 1px solid var(--background-modifier-border);
 	border-radius: 8px;
 	object-fit: contain;
