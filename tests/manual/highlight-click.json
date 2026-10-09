@@ -1,0 +1,70 @@
+{
+  "checks": [
+    {
+      "name": "点击高亮触发了回调，且 id 正确",
+      "pass": true
+    },
+    {
+      "name": "回调带回了点击坐标",
+      "pass": true
+    },
+    {
+      "name": "点击 x 是父文档坐标（含 iframe 偏移 140px）",
+      "pass": true
+    },
+    {
+      "name": "点击 y 是父文档坐标（含 iframe 偏移 90px）",
+      "pass": true
+    },
+    {
+      "name": "点击坐标**不是** iframe 内坐标（证明确实做了换算）",
+      "pass": true
+    },
+    {
+      "name": "getHighlightRect() 返回矩形",
+      "pass": true
+    },
+    {
+      "name": "getHighlightRect() 的 left/top 也是父文档坐标（含偏移）",
+      "pass": true
+    },
+    {
+      "name": "高亮覆盖的文本就是目标句",
+      "pass": true
+    }
+  ],
+  "pass": true,
+  "numbers": {
+    "iframeOffset": {
+      "x": 140,
+      "y": 90
+    },
+    "expectedClick": {
+      "x": 783,
+      "y": 194
+    },
+    "clicks": [
+      {
+        "id": "h1",
+        "click": {
+          "x": 783,
+          "y": 194
+        }
+      }
+    ],
+    "firstClick": {
+      "id": "h1",
+      "click": {
+        "x": 783,
+        "y": 194
+      }
+    },
+    "highlightRect": {
+      "left": 666,
+      "top": 182.78125,
+      "width": 234,
+      "height": 23
+    },
+    "rangeText": "点击这一句应当弹出就地菜单"
+  }
+}

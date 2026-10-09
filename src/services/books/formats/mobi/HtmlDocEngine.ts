@@ -2140,9 +2140,29 @@ export class HtmlDocEngine implements IReaderEngine {
 	}
 
 	/** 点击高亮 → UI 打开编辑（CSS Highlight 路径下由 Mark 层用坐标做命中测试）。 */
-	setHighlightClickHandler(handler: (id: string) => void): void {
+	setHighlightClickHandler(handler: (id: string, click?: { x: number; y: number }) => void): void {
 		this.highlightClickHandler = handler;
 		this.highlightLayer?.setClickHandler(handler);
+	}
+
+	/**
+	 * 某条高亮当前的矩形（**父文档视口坐标**）。
+	 *
+	 * iframe 内拿到的矩形是 iframe 自身坐标系，高亮层会用 offsetProvider 加上
+	 * iframe 在父文档里的位置（每次取实时值，滚动后仍准）。
+	 */
+	getHighlightRect(id: string): { left: number; top: number; width: number; height: number } | null {
+		return this.highlightLayer?.rectOf(id) ?? null;
+	}
+
+	/** iframe 在父文档视口里的位置（高亮层换算坐标用；取不到返回 null）。 */
+	private iframeViewportOffset(): { x: number; y: number } | null {
+		try {
+			const rect = this.iframe?.getBoundingClientRect();
+			return rect ? { x: rect.left, y: rect.top } : null;
+		} catch {
+			return null;
+		}
 	}
 
 	/** 最近一次定位结果（`exact-range`/`quote-unique`/`quote-first`/`progression-only`）。 */
@@ -2262,6 +2282,8 @@ export class HtmlDocEngine implements IReaderEngine {
 				structureStamp: () => this.highlightStamp,
 				goToProgression: (progression) => this.goToFraction(progression),
 			});
+			// iframe 内的事件/矩形都要换算到父文档视口，UI 的就地菜单才能贴住高亮
+			this.highlightLayer.setHostOffsetProvider(() => this.iframeViewportOffset());
 			if (this.highlightClickHandler) this.highlightLayer.setClickHandler(this.highlightClickHandler);
 		}
 		return this.highlightLayer;

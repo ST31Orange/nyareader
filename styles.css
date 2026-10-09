@@ -7,6 +7,39 @@
 	background: var(--background-primary);
 }
 
+/* ===== 高亮就地小菜单（六色 / 加笔记 / 复制 / 删除）===== */
+.nyareader-hl-menu {
+	position: absolute;
+	z-index: 31;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 7px 9px;
+	border-radius: 10px;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	box-shadow: 0 6px 22px rgba(0, 0, 0, 0.28);
+	user-select: none;
+	white-space: nowrap;
+}
+.nyareader-hl-menu.is-hidden {
+	display: none;
+}
+.nyareader-hl-colors {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+.nyareader-hl-actions {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+/* 当前颜色：加一圈强调色描边，一眼看出这条高亮是什么颜色 */
+.nyareader-hl-color.is-active {
+	box-shadow: 0 0 0 2px var(--background-secondary), 0 0 0 4px var(--interactive-accent);
+}
+
 /* ===== 批注面板（搜索 / 排序 / 色板 / 导出） ===== */
 .nyareader-annotations-header {
 	display: flex;

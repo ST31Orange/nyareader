@@ -22,7 +22,7 @@ import type { BookModel, RelayoutState } from "../types";
 import { debounce } from "../utils/debounce";
 import { displayPageFromLocation } from "../utils/paging";
 import { formatPageIndicator, formatSeekPercent, ratioFromClientX, stepSeekPercent } from "../utils/transport";
-import { HIGHLIGHT_COLORS, HIGHLIGHT_COLOR_LABEL, type HighlightColor } from "../services/annotations/AnnotationModel";
+import { HIGHLIGHT_COLORS, HIGHLIGHT_COLOR_LABEL, normalizeHighlightColor, type HighlightColor } from "../services/annotations/AnnotationModel";
 import type { Annotation } from "../services/annotations/AnnotationModel";
 import { annotationExportFileName, annotationsToMarkdown } from "../utils/annotation-markdown";
 
@@ -120,6 +120,11 @@ export class ReaderView extends ItemView {
 	private selectionText = "";
 	/** 最后使用的高亮颜色（下次"高亮"按钮沿用） */
 	private lastHighlightColor: HighlightColor = "yellow";
+	// ---------- 高亮就地小菜单 ----------
+	/** 就地小菜单元素 */
+	private highlightMenuEl: HTMLElement | null = null;
+	/** 小菜单当前作用的高亮 */
+	private highlightMenuAnnotation: Annotation | null = null;
 	/**
 	 * 打开流程进行中（大文件读取/解析/排版）：此期间忽略模式/布局切换、翻页快捷键与
 	 * 批注类操作，并在 UI 上禁用相关控件，避免"点了没反应"被当成按钮失灵。
@@ -183,8 +188,8 @@ export class ReaderView extends ItemView {
 			// 打开阶段（reading/parsing/index/rendering/done）→ 加载遮罩文案与百分比
 			onStage: (stage, detail) => this.onStage(stage, detail),
 			onRelayoutState: (state) => this.onRelayoutState(state),
-			// 点击正文里的高亮 → 打开批注面板并定位到该条
-			onAnnotationClick: () => this.openAnnotations(),
+			// 点击正文里的高亮 → 在它旁边弹出就地小菜单（六色/加笔记/复制/删除）
+			onAnnotationClick: (id, click) => void this.openHighlightMenu(id, click),
 		};
 		this.controller = new ReaderController(this.plugin, events);
 		// 打开阶段回调是控制器事件的可选字段：老版本/未落地时静默降级（不抛异常）
@@ -1017,12 +1022,203 @@ export class ReaderView extends ItemView {
 	}
 
 	/** 打开批注管理弹窗（列表 / 跳转 / 编辑笔记 / 删除）。 */
+	// ---------- 高亮就地小菜单（六色 / 加笔记 / 复制 / 删除） ----------
+
+	/**
+	 * 点击正文里的高亮 → 在它旁边弹出小菜单。
+	 *
+	 * 用户要求：**高亮是高亮、批注是批注** —— 高亮像 PDF 标注一样"点了就地操作"，
+	 * 不必绕道批注面板；面板只管理带笔记的批注。
+	 */
+	private async openHighlightMenu(id: string, click?: { x: number; y: number }): Promise<void> {
+		if (!this.isReaderInteractive()) return;
+		const controller = this.controller;
+		if (!controller) return;
+		const annotation = await controller.getAnnotation(id);
+		if (!annotation) {
+			new Notice("NyaReader：这条高亮的记录已不存在。", 3000);
+			return;
+		}
+		this.highlightMenuAnnotation = annotation;
+		const menu = this.ensureHighlightMenu();
+		if (!menu) return;
+		// 当前颜色高亮显示
+		for (const sw of Array.from(menu.querySelectorAll<HTMLElement>(".nyareader-hl-color"))) {
+			sw.toggleClass("is-active", sw.dataset.color === normalizeHighlightColor(annotation.color));
+		}
+		const noteBtn = menu.querySelector<HTMLElement>('[data-action="note"]');
+		noteBtn?.setText(annotation.note ? "编辑笔记" : "加笔记");
+		menu.removeClass("is-hidden");
+		this.positionHighlightMenu(click, id);
+	}
+
+	/** 构造就地小菜单（只构造一次，复用）。 */
+	private ensureHighlightMenu(): HTMLElement | null {
+		if (this.highlightMenuEl?.isConnected) return this.highlightMenuEl;
+		const host = this.readingArea;
+		if (!host) return null;
+		const menu = host.createDiv({ cls: "nyareader-hl-menu is-hidden" });
+		menu.setAttribute("role", "toolbar");
+		menu.setAttribute("aria-label", "高亮操作");
+		const colors = menu.createDiv({ cls: "nyareader-hl-colors" });
+		for (const c of HIGHLIGHT_COLORS) {
+			const sw = colors.createEl("button", {
+				cls: `nyareader-sel-color is-${c} nyareader-hl-color`,
+				attr: { "data-color": c, title: `改为${HIGHLIGHT_COLOR_LABEL[c]}色`, "aria-label": `改为${HIGHLIGHT_COLOR_LABEL[c]}色`, type: "button" },
+			});
+			sw.addEventListener("mousedown", (e) => e.preventDefault());
+			sw.addEventListener("click", () => void this.applyHighlightColor(c));
+		}
+		const actions = menu.createDiv({ cls: "nyareader-hl-actions" });
+		const mk = (action: string, label: string, title: string, fn: () => void): void => {
+			const b = actions.createEl("button", { cls: "nyareader-sel-btn", text: label, attr: { "data-action": action, title, type: "button" } });
+			b.addEventListener("mousedown", (e) => e.preventDefault());
+			b.addEventListener("click", fn);
+		};
+		mk("note", "加笔记", "给这条高亮添加/编辑笔记", () => this.noteFromHighlightMenu());
+		mk("copy", "复制", "复制选中的原文", () => void this.copyHighlightText());
+		mk("delete", "删除", "删除这条高亮", () => void this.deleteHighlight());
+		// 点菜单外 / Esc / 滚动都收起
+		this.registerDomEvent(document, "mousedown", (evt) => {
+			const t = evt.target as Node | null;
+			if (this.highlightMenuEl && t && !this.highlightMenuEl.contains(t)) this.hideHighlightMenu();
+		});
+		this.registerDomEvent(document, "keydown", (evt) => {
+			if (evt.key === "Escape") this.hideHighlightMenu();
+		});
+		this.registerDomEvent(this.readingArea, "scroll", () => this.hideHighlightMenu());
+		this.highlightMenuEl = menu;
+		return menu;
+	}
+
+	private hideHighlightMenu(): void {
+		this.highlightMenuEl?.addClass("is-hidden");
+		this.highlightMenuAnnotation = null;
+	}
+
+	/**
+	 * 定位小菜单：优先用点击坐标（最贴合手势）；拿不到就用引擎给出的高亮矩形；
+	 * 两者都没有时退回阅读区中央顶部（绝不静默不显示）。
+	 */
+	private positionHighlightMenu(click: { x: number; y: number } | undefined, id: string): void {
+		const menu = this.highlightMenuEl;
+		if (!menu) return;
+		const hostRect = this.readingArea.getBoundingClientRect();
+		let anchor: { left: number; top: number; bottom: number } | null = null;
+		if (click) {
+			anchor = { left: click.x, top: click.y, bottom: click.y };
+		} else {
+			const rect = this.controller?.currentEngine?.getHighlightRect?.(id) ?? null;
+			if (rect) anchor = { left: rect.left + rect.width / 2, top: rect.top, bottom: rect.top + rect.height };
+		}
+		const mw = menu.offsetWidth || 220;
+		const mh = menu.offsetHeight || 36;
+		let left: number;
+		let top: number;
+		if (anchor) {
+			left = anchor.left - hostRect.left - mw / 2;
+			top = anchor.top - hostRect.top - mh - 8;
+			if (top < 0) top = anchor.bottom - hostRect.top + 8; // 上方放不下 → 放下方
+		} else {
+			left = (hostRect.width - mw) / 2;
+			top = 8;
+		}
+		left = Math.max(4, Math.min(left, Math.max(4, hostRect.width - mw - 4)));
+		top = Math.max(2, Math.min(top, Math.max(2, hostRect.height - mh - 2)));
+		menu.style.left = `${Math.round(left)}px`;
+		menu.style.top = `${Math.round(top)}px`;
+	}
+
+	/** 就地改色（高亮层立即重绘 + 落盘）。 */
+	private async applyHighlightColor(color: HighlightColor): Promise<void> {
+		const a = this.highlightMenuAnnotation;
+		const controller = this.controller;
+		if (!a || !controller) return;
+		try {
+			await controller.updateAnnotation(a.id, { color });
+			// 引擎侧立即重绘，避免"改完颜色要等重排才变"
+			controller.currentEngine?.addHighlight?.({
+				id: a.id,
+				anchor: a.anchor ?? {
+					kind: "chapter",
+					primary: a.location,
+					quote: { exact: a.text, prefix: "", suffix: "" },
+					progression: 0,
+					v: 1,
+				},
+				color,
+				hasNote: Boolean(a.note),
+				text: a.text,
+			});
+			this.highlightMenuAnnotation = { ...a, color };
+			for (const sw of Array.from(this.highlightMenuEl?.querySelectorAll<HTMLElement>(".nyareader-hl-color") ?? [])) {
+				sw.toggleClass("is-active", sw.dataset.color === color);
+			}
+		} catch (e) {
+			new Notice(`NyaReader：改色失败：${e instanceof Error ? e.message : String(e)}`, 5000);
+		}
+	}
+
+	/** 就地加/改笔记（只改 note 字段，高亮本身保留）。 */
+	private noteFromHighlightMenu(): void {
+		const a = this.highlightMenuAnnotation;
+		const controller = this.controller;
+		if (!a || !controller) return;
+		this.hideHighlightMenu();
+		new PromptModal(this.app, {
+			title: a.note ? "编辑笔记" : "添加笔记",
+			multiline: true,
+			initialValue: a.note ?? "",
+			placeholder: "写下你的想法…",
+			submitText: "保存",
+			onSubmit: async (note) => {
+				await controller.updateAnnotation(a.id, { note });
+				const view = this;
+				new Notice("NyaReader：笔记已保存（可在「笔记」页面管理）。", 2500);
+				void view;
+			},
+		}).open();
+	}
+
+	private async copyHighlightText(): Promise<void> {
+		const a = this.highlightMenuAnnotation;
+		this.hideHighlightMenu();
+		if (!a?.text) return;
+		try {
+			await navigator.clipboard.writeText(a.text);
+			new Notice("NyaReader：已复制高亮原文。", 2000);
+		} catch {
+			new Notice("NyaReader：复制失败（剪贴板不可用）。", 3000);
+		}
+	}
+
+	private async deleteHighlight(): Promise<void> {
+		const a = this.highlightMenuAnnotation;
+		const controller = this.controller;
+		this.hideHighlightMenu();
+		if (!a || !controller) return;
+		try {
+			await controller.removeAnnotation(a.id);
+			controller.currentEngine?.removeHighlight?.(a.id);
+			new Notice("NyaReader：高亮已删除。", 2500);
+		} catch (e) {
+			new Notice(`NyaReader：删除失败：${e instanceof Error ? e.message : String(e)}`, 5000);
+		}
+	}
+
+	/**
+	 * 打开「笔记」面板。
+	 *
+	 * 用户要求：**面板里不显示高亮**。高亮是页面上的标注（点击就地操作即可），
+	 * 这个面板只管理**写了笔记**的条目 —— 两类东西各有一套交互，不再互相干扰。
+	 */
 	private openAnnotations(): void {
 		if (!this.isReaderInteractive()) return; // 打开中：避免读到旧书/半挂载状态
 		const controller = this.controller;
 		if (!controller) return;
 		new AnnotationListModal(this.app, {
-			getAnnotations: () => controller.listAnnotations(),
+			// 只取带笔记的条目（高亮本身在正文里直接点、直接管）
+			getAnnotations: async () => (await controller.listAnnotations()).filter((a) => Boolean(a.note && a.note.trim())),
 			// 优先用引擎的 focusHighlight：它按锚点精确解析并滚到位置；不可用时退回 goTo
 			onJump: (a) => {
 				const engine = controller.currentEngine;
@@ -1031,9 +1227,7 @@ export class ReaderView extends ItemView {
 			},
 			onEditNote: (a) => controller.updateAnnotation(a.id, { note: a.note }),
 			onDelete: (a) => controller.removeAnnotation(a.id),
-			// 新增：面板内直接改色（侧车 + 引擎重绘）
 			onUpdateColor: (a, color) => controller.updateAnnotation(a.id, { color }),
-			// 新增：导出 Markdown 到 vault
 			onExport: (list) => this.exportAnnotationsMarkdown(list),
 		}).open();
 	}

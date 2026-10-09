@@ -73,7 +73,7 @@ export interface ReaderControllerEvents {
 	 * 点击了正文里的高亮（批注）→ UI 打开编辑面板。
 	 * 由引擎的 `setHighlightClickHandler` 透传上来；未实现该方法的引擎不会触发。
 	 */
-	onAnnotationClick?: (id: string) => void;
+	onAnnotationClick?: (id: string, click?: { x: number; y: number }) => void;
 	/**
 	 * 读到了 v1 旧侧车并已迁移到内存（即将写成 v2 新文件，旧文件原样保留）。
 	 * UI 可据此提示"已迁移 N 条旧批注，旧文件已保留"。
@@ -630,10 +630,10 @@ export class ReaderController {
 				// 鼠标点击按钮清空 DOM 选区后仍然可用。
 				if (payload.text?.trim()) this.lastSelection = payload;
 			});
-			// 点击正文高亮 → UI 打开该条批注（引擎自己负责命中测试）
-			engine.setHighlightClickHandler?.((id) => {
+			// 点击正文高亮 → UI 在附近显示就地小菜单（引擎负责命中测试与坐标换算）
+			engine.setHighlightClickHandler?.((id, click) => {
 				try {
-					this.events.onAnnotationClick?.(id);
+					this.events.onAnnotationClick?.(id, click);
 				} catch {
 					/* 视图层问题不影响阅读 */
 				}
@@ -1034,6 +1034,19 @@ export class ReaderController {
 		}
 		if (this.annotations.length) return [...this.annotations];
 		return this.sidecar.readForBook(file.path, book.fingerprint);
+	}
+
+	/**
+	 * 取单条批注（就地小菜单用）。
+	 *
+	 * 先查内存镜像，未命中再读存储 —— 内存镜像在"刚加完还没落盘"或
+	 * "懒加载尚未读取"两种情况下都可能是空的，所以必须有回退。
+	 */
+	async getAnnotation(id: string): Promise<Annotation | null> {
+		const inMemory = this.annotations.find((a) => a.id === id);
+		if (inMemory) return inMemory;
+		const all = await this.listAnnotations();
+		return all.find((a) => a.id === id) ?? null;
 	}
 
 	/** 删除批注：PDF 从文件本体移除并隐藏高亮；侧车格式从 JSON 移除。 */

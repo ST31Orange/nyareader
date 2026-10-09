@@ -340,10 +340,18 @@ export class TxtEngine implements IReaderEngine {
 		this.ensureHighlightLayer()?.removeHighlight(id);
 	}
 
-	/** 点击高亮 → 交给 UI 打开编辑（span 降级路径用 data 属性，CSS Highlight 路径用坐标命中）。 */
-	setHighlightClickHandler(handler: (id: string) => void): void {
+	/** 点击高亮 → 交给 UI 打开就地小菜单（span 降级路径用 data 属性，CSS Highlight 路径用坐标命中）。 */
+	setHighlightClickHandler(handler: (id: string, click?: { x: number; y: number }) => void): void {
 		this.highlightClickHandler = handler;
 		this.highlightLayer?.setClickHandler(handler);
+	}
+
+	/**
+	 * 某条高亮当前的矩形（**父文档视口坐标**）。
+	 * TXT 渲染在宿主文档里（无 iframe），坐标天然一致，无需换算。
+	 */
+	getHighlightRect(id: string): { left: number; top: number; width: number; height: number } | null {
+		return this.highlightLayer?.rectOf(id) ?? null;
 	}
 
 	/** 最近一次定位结果（含 `exact-range`/`quote-unique`/`quote-first`/`progression-only`）。 */

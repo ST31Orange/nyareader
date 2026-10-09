@@ -18,6 +18,7 @@ import {
 	normalizeWithIndex,
 	parseAnchor,
 	quoteFromText,
+	rawOffsetToNormalizedOffset,
 } from "../src/services/annotations/AnnotationAnchor";
 import { normalizeHighlightColor } from "../src/services/annotations/AnnotationModel";
 import {
@@ -429,5 +430,50 @@ describe("v2 侧车（已是新格式）", () => {
 		expect(normalizeHighlightColor("blue")).toBe("blue");
 		expect(normalizeHighlightColor("crimson")).toBe("yellow");
 		expect(normalizeHighlightColor(undefined)).toBe("yellow");
+	});
+});
+
+/**
+ * 回归：跨区域选区只存 charStart 时，必须靠"起点提示"精确命中。
+ *
+ * 旧实现只保留 charEnd 齐全的情况，跨区域直接把结构区间整段丢弃 →
+ * 书里有重复句子时只能按前后文打分猜位置（用户实测到"高亮位置有问题"）。
+ */
+describe("起点提示：原文偏移 → 归一化下标（跨区域选区只存 charStart 时用）", () => {
+	it("空白折叠后仍能把原文偏移正确换算（否则切片整体偏移）", () => {
+		const raw = "前半段\n\n  后半段目标句";
+		const norm = normalizeWithIndex(raw);
+		const rawAt = raw.indexOf("目标");
+		const normAt = rawOffsetToNormalizedOffset(norm, rawAt);
+		expect(normAt).not.toBeNull();
+		expect(norm.text.slice(normAt!, normAt! + 3)).toBe("目标句");
+	});
+
+	it("落在被折叠空白内部的偏移 → 落到其后的第一个字符", () => {
+		const norm = normalizeWithIndex("A   B");
+		expect(norm.text).toBe("A B");
+		expect(rawOffsetToNormalizedOffset(norm, 2)).toBe(2);
+	});
+
+	it("越界/非法输入返回 null（调用方退回纯指纹搜索）", () => {
+		expect(rawOffsetToNormalizedOffset(normalizeWithIndex("abc"), -1)).toBeNull();
+		expect(rawOffsetToNormalizedOffset(normalizeWithIndex("abc"), Number.NaN)).toBeNull();
+		expect(rawOffsetToNormalizedOffset(normalizeWithIndex(""), 0)).toBeNull();
+	});
+
+	it("只有起点也能精确命中重复句中**正确的那一处**（不再按打分猜）", () => {
+		const dup = "重复句。中间隔开一些文字。重复句。";
+		const rawAt = dup.lastIndexOf("重复句");
+		const anchor = createAnchor({
+			kind: "chapter",
+			primary: "c1",
+			charStart: rawAt,
+			quote: { exact: "重复句", prefix: "", suffix: "" },
+			progression: 0.5,
+		});
+		const located = locateInText(dup, anchor);
+		expect(located.quality).toBe("exact-range");
+		expect(located.approximate).toBe(false);
+		expect(located.start).toBe(rawAt); // 第二处，而不是第一处
 	});
 });

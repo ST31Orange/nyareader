@@ -58,7 +58,7 @@ export class AnnotationListModal extends Modal {
 	}
 
 	onOpen(): void {
-		this.titleEl.setText("批注管理");
+		this.titleEl.setText("笔记");
 		this.contentEl.addClass("nyareader-annotations-modal");
 
 		// 工具条：搜索 + 排序 + 导出
@@ -66,7 +66,7 @@ export class AnnotationListModal extends Modal {
 		this.countEl = header.createSpan({ cls: "nyareader-annotations-count", text: "加载中…" });
 		this.searchEl = header.createEl("input", {
 			cls: "nyareader-annotations-search",
-			attr: { type: "search", placeholder: "搜索正文或笔记…", "aria-label": "搜索批注" },
+			attr: { type: "search", placeholder: "搜索原文或笔记…", "aria-label": "搜索笔记" },
 		});
 		this.searchEl.addEventListener("input", () => {
 			this.query = this.searchEl.value.trim().toLowerCase();
@@ -89,7 +89,7 @@ export class AnnotationListModal extends Modal {
 		this.listEl = this.contentEl.createDiv({ cls: "nyareader-annotations-list" });
 		this.emptyEl = this.contentEl.createDiv({
 			cls: "nyareader-annotations-empty",
-			text: "还没有批注。选中文本后会弹出浮层，点色块即可高亮（也可加笔记）。",
+			text: "还没有笔记。选中文本后，在浮层里点「笔记」；也可以点正文里已有的高亮，在就地菜单里「加笔记」。",
 		});
 		this.emptyEl.hide();
 		void this.refresh();
@@ -109,7 +109,9 @@ export class AnnotationListModal extends Modal {
 		this.listEl.empty();
 		this.emptyEl.toggle(!visible.length);
 		this.emptyEl.setText(
-			this.all.length && !visible.length ? "没有匹配的批注。" : "还没有批注。选中文本后会弹出浮层，点色块即可高亮（也可加笔记）。"
+			this.all.length && !visible.length
+				? "没有匹配的笔记。"
+				: "还没有笔记。选中文本后，在浮层里点「笔记」；也可以点正文里已有的高亮，在就地菜单里「加笔记」。"
 		);
 		for (const a of visible) this.listEl.appendChild(this.buildRow(a));
 	}

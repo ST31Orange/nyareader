@@ -136,8 +136,18 @@ export interface IReaderEngine {
 	addHighlight?(highlight: EngineHighlight): void;
 	/** 可选：移除一条高亮 */
 	removeHighlight?(id: string): void;
-	/** 可选：点击高亮 → UI 打开编辑（CSS Custom Highlight API 路径下由引擎自建命中检测） */
-	setHighlightClickHandler?(handler: (id: string) => void): void;
+	/**
+	 * 可选：点击高亮 → UI 显示就地小菜单（CSS Custom Highlight API 路径下由引擎自建命中检测）。
+	 *
+	 * `click` 为**父文档视口坐标**（引擎负责从 iframe 坐标系换算），UI 据此把菜单放在高亮旁；
+	 * 换算不出来时为 undefined，UI 回退到 `getHighlightRect()`。
+	 */
+	setHighlightClickHandler?(handler: (id: string, click?: { x: number; y: number }) => void): void;
+	/**
+	 * 可选：某条高亮当前的矩形（**父文档视口坐标**；未渲染或不在布局区时为 null）。
+	 * 用于把就地小菜单定位到高亮处。
+	 */
+	getHighlightRect?(id: string): { left: number; top: number; width: number; height: number } | null;
 	/** 可选：最近一次定位的降级结果（UI 标注"位置可能不准"） */
 	getHighlightPlacements?(): readonly EngineHighlightPlacement[];
 	/**

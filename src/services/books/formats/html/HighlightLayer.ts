@@ -118,13 +118,14 @@ export class HighlightLayer {
 	private textCache = new Map<string, string>();
 	private docIndex: DocIndex | null = null;
 	private stamp = -1;
-	private clickHandler: ((id: string) => void) | null = null;
+	private clickHandler: ((id: string, click?: { x: number; y: number }) => void) | null = null;
+	/** 渲染坐标系 → 父文档视口的偏移提供者（iframe 场景必需；同文档返回 null） */
+	private offsetProvider: (() => { x: number; y: number } | null) | null = null;
 	private disposed = false;
 
 	private onDocClick = (e: MouseEvent): void => this.handleClick(e);
 
-	constructor(private host: HighlightHost) {
-		const root = host.documentRoot();
+	constructor(private host: HighlightHost) {		const root = host.documentRoot();
 		this.doc = root?.ownerDocument ?? document;
 		this.win = (this.doc.defaultView ?? window) as Window;
 		const capable = this.win as unknown as HighlightCapableWindow;
@@ -143,8 +144,50 @@ export class HighlightLayer {
 		return this.registry !== null && this.highlightCtor !== null;
 	}
 
-	setClickHandler(handler: ((id: string) => void) | null): void {
+	setClickHandler(handler: ((id: string, click?: { x: number; y: number }) => void) | null): void {
 		this.clickHandler = handler;
+	}
+
+	/**
+	 * 设置"渲染坐标系 → 父文档视口"的偏移**提供者**。
+	 *
+	 * iframe 内的事件坐标是 iframe 自身坐标系，UI 的浮层在父文档里，
+	 * 必须先加上 iframe 的位置才能把菜单放到高亮旁边（TXT 同文档时返回 null）。
+	 *
+	 * 用**回调**而不是快照：页面滚动 / 布局变化后 iframe 位置会变，
+	 * 每次点击都要重新取，快照会让菜单定位越来越偏。
+	 */
+	setHostOffsetProvider(provider: (() => { x: number; y: number } | null) | null): void {
+		this.offsetProvider = provider;
+	}
+
+	private currentOffset(): { x: number; y: number } {
+		if (!this.offsetProvider) return { x: 0, y: 0 };
+		try {
+			return this.offsetProvider() ?? { x: 0, y: 0 };
+		} catch {
+			return { x: 0, y: 0 };
+		}
+	}
+
+	/** 渲染坐标系矩形 → 父文档视口矩形。 */
+	private toHostRect(rect: DOMRect): { left: number; top: number; width: number; height: number } {
+		const off = this.currentOffset();
+		return {
+			left: rect.left + off.x,
+			top: rect.top + off.y,
+			width: rect.width,
+			height: rect.height,
+		};
+	}
+
+	/** 某条高亮当前的矩形（父文档视口坐标）；未渲染/不在布局区返回 null。 */
+	rectOf(id: string): { left: number; top: number; width: number; height: number } | null {
+		const range = this.rangeOf(id);
+		if (!range) return null;
+		const rect = range.getBoundingClientRect();
+		if (!rect || (rect.width === 0 && rect.height === 0)) return null;
+		return this.toHostRect(rect);
 	}
 
 	/** 全量设置（重开书/增删改后调用）并立即重新解析、重绘。 */
@@ -272,11 +315,14 @@ export class HighlightLayer {
 	private handleClick(e: MouseEvent): void {
 		const handler = this.clickHandler;
 		if (!handler) return;
+		// 事件坐标是**渲染坐标系**（iframe 内或同文档），换算到父文档视口后交给 UI
+		const off = this.currentOffset();
+		const click = { x: e.clientX + off.x, y: e.clientY + off.y };
 		// 降级路径：span 上有 id，直接命中
 		const target = e.target as Element | null;
 		const spanId = target && typeof target.closest === "function" ? target.closest(".nyar-hl")?.getAttribute("data-nyar-hl-id") : null;
 		if (spanId) {
-			handler(spanId);
+			handler(spanId, click);
 			return;
 		}
 		// 主路径（CSS Custom Highlight 不改 DOM）：按坐标做命中测试
@@ -284,7 +330,7 @@ export class HighlightLayer {
 		const at = this.caretAt(e.clientX, e.clientY);
 		if (!at) return;
 		const hit = this.resolved.find((r) => r.space === "region" && r.regionKey === at.regionKey && at.offset >= r.start && at.offset < r.end);
-		if (hit) handler(hit.id);
+		if (hit) handler(hit.id, click);
 	}
 
 	// ---------- 渲染 ----------
