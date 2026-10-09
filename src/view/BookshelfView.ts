@@ -289,12 +289,14 @@ export class BookshelfView extends ItemView {
 		void span;
 		bar.createEl("button", { text: "＋ 新建文件夹", cls: "nyareader-shelf-btn" }).addEventListener("click", () => void this.createFolder());
 
+		// 只有文件夹区域滚动，标题行与新建按钮固定
+		const scroll = main.createDiv({ cls: "nyareader-shelf-main-scroll" });
 		const folders = this.orderedFolders(this.currentLibrary);
 		if (!folders.length) {
-			main.createDiv({ cls: "nyareader-shelf-empty", text: "这个书库还没有文件夹。\n点「＋ 新建文件夹」，再把电子书拖进去。" });
+			scroll.createDiv({ cls: "nyareader-shelf-empty", text: "这个书库还没有文件夹。\n点「＋ 新建文件夹」，再把电子书拖进去。" });
 			return;
 		}
-		const grid = main.createDiv({ cls: "nyareader-shelf-grid" });
+		const grid = scroll.createDiv({ cls: "nyareader-shelf-grid" });
 		for (const folder of folders) {
 			const collapsed = this.isCollapsed(this.folderKey(folder.relPath));
 			const zone = grid.createDiv({ cls: "nyareader-shelf-zone" });
