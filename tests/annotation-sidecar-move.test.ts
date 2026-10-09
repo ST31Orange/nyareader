@@ -26,7 +26,7 @@ import {
 	type FingerprintSidecarAdapter,
 } from "../src/services/annotations/FingerprintAnnotationStore";
 import { SidecarAnnotationStore } from "../src/services/annotations/SidecarAnnotationStore";
-import { planBookshelfMigration } from "../src/utils/migration-plan";
+import { migrationOps, planBookshelfMigration } from "../src/utils/migration-plan";
 
 const FP = "9f56ae4d159cd3609e48c49ea89acc39";
 const FP2 = "abcf4c5bf198f014047a62f158bc39c9";
@@ -418,5 +418,74 @@ describe("迁移决策 planBookshelfMigration", () => {
 		expect(p.strategy).toBe("move-children");
 		expect(p.newShelfDir).toBe("newhome/library");
 		expect(p.newAnnDir).toBe("newhome/notes");
+	});
+});
+
+/**
+ * 回归（用户连续踩了两次）：`Destination file already exists`。
+ *
+ * 两次根因相同 —— **先把目标目录建出来，再往里整体 rename**（或整体 rename 到已存在目录）。
+ * 这里把"操作序列"固化成可断言的铁律，防止第三次。
+ */
+describe("迁移操作序列 migrationOps（铁律：整体搬目录前绝不能创建目标）", () => {
+	const oldAnchor = "nyareader";
+	const oldShelf = "nyareader/library";
+	const oldAnn = "nyareader/annotations";
+
+	it("整体搬上级目录：序列里**没有** ensure-parent，也不允许有", () => {
+		const plan = planBookshelfMigration({
+			bookshelfDir: oldShelf,
+			annotationDir: oldAnn,
+			shelfExists: true,
+			rawTarget: "newhome",
+			targetState: "missing",
+		});
+		expect(plan.strategy).toBe("whole-parent");
+		const ops = migrationOps(plan, oldAnchor, oldShelf, oldAnn);
+		expect(ops.map((o) => o.kind)).toEqual(["rename-parent"]);
+		expect(ops.some((o) => o.kind === "ensure-parent")).toBe(false);
+	});
+
+	it("目标已存在（空文件夹）：先建目录再分别搬子目录", () => {
+		const plan = planBookshelfMigration({
+			bookshelfDir: oldShelf,
+			annotationDir: oldAnn,
+			shelfExists: true,
+			rawTarget: "testmove",
+			targetState: "empty-folder",
+		});
+		expect(plan.strategy).toBe("move-children");
+		const ops = migrationOps(plan, oldAnchor, oldShelf, oldAnn);
+		expect(ops.map((o) => o.kind)).toEqual(["ensure-parent", "move-shelf", "move-annotations"]);
+	});
+
+	/**
+	 * 这条是本次的核心不变式：只要序列里出现 `rename-parent`，
+	 * 就**不允许**在它之前出现任何创建该目标的动作。
+	 */
+	it("不变式：任何含 rename-parent 的序列，都不得预先创建目标", () => {
+		const cases = [
+			{ rawTarget: "newhome", targetState: "missing" as const },
+			{ rawTarget: "testmove", targetState: "empty-folder" as const },
+			{ rawTarget: "deep/a/b", targetState: "missing" as const },
+		];
+		for (const c of cases) {
+			const plan = planBookshelfMigration({
+				bookshelfDir: oldShelf,
+				annotationDir: oldAnn,
+				shelfExists: true,
+				rawTarget: c.rawTarget,
+				targetState: c.targetState,
+			});
+			const ops = migrationOps(plan, oldAnchor, oldShelf, oldAnn);
+			const renameIdx = ops.findIndex((o) => o.kind === "rename-parent");
+			if (renameIdx < 0) continue;
+			const createsBefore = ops.slice(0, renameIdx).filter((o) => o.kind === "ensure-parent" && o.path === plan.anchor);
+			expect(createsBefore, `案例 ${JSON.stringify(c)} 在整体 rename 前创建了目标`).toHaveLength(0);
+		}
+	});
+
+	it("计划不完整（缺路径）时返回空序列，调用方据此拒绝执行", () => {
+		expect(migrationOps({ siblings: true }, oldAnchor, oldShelf, oldAnn)).toEqual([]);
 	});
 });

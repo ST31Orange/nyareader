@@ -77,3 +77,37 @@ export function planBookshelfMigration(input: MigrationPlanInput): MigrationPlan
 
 	return { anchor, newShelfDir, newAnnDir, siblings, strategy };
 }
+
+/** 一次迁移要执行的文件操作。 */
+export type MigrationOp =
+	/** 递归创建目录（只有"分别搬子目录"这条路需要） */
+	| { kind: "ensure-parent"; path: string }
+	/** 整体重命名（源必须存在、目标必须不存在） */
+	| { kind: "rename-parent"; from: string; to: string }
+	/** 移动书库目录 */
+	| { kind: "move-shelf"; from: string; to: string }
+	/** 移动批注目录（失败不阻断，只提示） */
+	| { kind: "move-annotations"; from: string; to: string };
+
+/**
+ * 把迁移计划展开成**有序操作序列**。
+ *
+ * ## 为什么要有这个函数（一条铁律）
+ * 用户连续两次遇到 `Destination file already exists`，根因都是同一个：
+ * **先把目标目录建出来，再往里整体 rename** —— 整体 rename 要求目标不存在。
+ *
+ * 所以这里把它固化成可单测的约束：
+ * - `whole-parent` 序列里**绝不出现 `ensure-parent`**；
+ * - `ensure-parent` 只允许出现在 `move-children`（那时目标必须存在才能往里搬）。
+ */
+export function migrationOps(plan: MigrationPlan, oldAnchor: string, oldShelf: string, oldAnnotations: string): MigrationOp[] {
+	if (!plan.anchor || !plan.newShelfDir || !plan.newAnnDir) return [];
+	if (plan.strategy === "whole-parent") {
+		return [{ kind: "rename-parent", from: oldAnchor, to: plan.anchor }];
+	}
+	return [
+		{ kind: "ensure-parent", path: plan.anchor },
+		{ kind: "move-shelf", from: oldShelf, to: plan.newShelfDir },
+		{ kind: "move-annotations", from: oldAnnotations, to: plan.newAnnDir },
+	];
+}

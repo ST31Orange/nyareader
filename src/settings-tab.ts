@@ -17,7 +17,7 @@ import {
 	bookshelfAnchor,
 	setAnnotationSidecarDir,
 } from "./utils/annotation-sidecar-path";
-import { planBookshelfMigration } from "./utils/migration-plan";
+import { migrationOps, planBookshelfMigration } from "./utils/migration-plan";
 
 export class NyaReaderSettingTab extends PluginSettingTab {
 	constructor(
@@ -276,37 +276,84 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 		const { anchor, newShelfDir, newAnnDir } = plan;
 
 		try {
-			await this.mkdirpVault(anchor);
-			// 路径 A：整体重命名上级目录（只有目标**原本不存在**时才可行；
-			// 先建目录再 rename 就是用户遇到的 Destination file already exists）
-			if (plan.strategy === "whole-parent") {
-				const parentFolder = app.vault.getAbstractFileByPath(oldParent);
-				if (parentFolder instanceof TFolder) {
-					await app.vault.rename(parentFolder, anchor);
-					await this.finishMigration(oldShelf, newShelfDir, oldAnnotations, newAnnDir, true, anchor);
-					return;
-				}
-			}
-			// 路径 B：把 library / annotations 分别移进目标目录
-			// （走 DataAdapter.rename，绕开 vault.rename "目标必须不存在"的限制）
-			const shelfFolder = app.vault.getAbstractFileByPath(oldShelf);
-			if (!(shelfFolder instanceof TFolder)) {
-				new Notice("NyaReader：找不到当前书库目录，未做任何改动。");
+			// ⚠️ 操作序列由纯函数 `migrationOps()` 给出（有单测锁住一条铁律：
+			// **"整体搬上级目录"绝不能预先创建目标目录**，否则必然
+			// `Destination file already exists` —— 用户连续两次踩的就是这个）。
+			const ops = migrationOps(plan, oldParent, oldShelf, oldAnnotations);
+			if (!ops.length) {
+				new Notice("NyaReader：迁移计划为空，未做任何改动。");
 				return;
 			}
-			await adapter.rename(oldShelf, newShelfDir);
 			let annotationsMoved = true;
-			const annFolder = app.vault.getAbstractFileByPath(oldAnnotations);
-			if (annFolder instanceof TFolder) {
-				try {
-					await adapter.rename(oldAnnotations, newAnnDir);
-				} catch {
-					annotationsMoved = false;
+			let moved = false;
+			for (const op of ops) {
+				switch (op.kind) {
+					case "ensure-parent":
+						await this.mkdirpVault(op.path);
+						break;
+					case "rename-parent": {
+						const parentFolder = app.vault.getAbstractFileByPath(op.from);
+						if (!(parentFolder instanceof TFolder)) {
+							new Notice("NyaReader：找不到当前目录，未做任何改动。");
+							return;
+						}
+						await app.vault.rename(parentFolder, op.to);
+						moved = true;
+						break;
+					}
+					case "move-shelf": {
+						const shelfFolder = app.vault.getAbstractFileByPath(op.from);
+						if (!(shelfFolder instanceof TFolder)) {
+							new Notice("NyaReader：找不到当前书库目录，未做任何改动。");
+							return;
+						}
+						if (app.vault.getAbstractFileByPath(op.to)) {
+							new Notice(`NyaReader：目标下已存在「${op.to}」，请换一个空白的上级目录。`, 8000);
+							return;
+						}
+						await adapter.rename(op.from, op.to);
+						moved = true;
+						break;
+					}
+					case "move-annotations": {
+						const annFolder = app.vault.getAbstractFileByPath(op.from);
+						if (!(annFolder instanceof TFolder)) break; // 本来就没有批注目录
+						if (app.vault.getAbstractFileByPath(op.to)) {
+							annotationsMoved = false; // 目标已有同名批注目录，不覆盖
+							break;
+						}
+						try {
+							await adapter.rename(op.from, op.to);
+						} catch {
+							annotationsMoved = false;
+						}
+						break;
+					}
 				}
+			}
+			if (!moved) {
+				new Notice("NyaReader：没有可迁移的目录，未做任何改动。");
+				return;
 			}
 			await this.finishMigration(oldShelf, newShelfDir, oldAnnotations, newAnnDir, annotationsMoved, anchor);
 		} catch (e) {
-			new Notice(`NyaReader：迁移失败：${e instanceof Error ? e.message : String(e)}`, 8000);
+			// 失败时把"当时到底在做什么"一并抛给用户/控制台，避免只有一句英文原文难以定位
+			const detail = {
+				strategy: plan.strategy,
+				anchor,
+				oldParent,
+				oldShelf,
+				oldAnnotations,
+				newShelfDir,
+				newAnnDir,
+				error: e instanceof Error ? e.message : String(e),
+			};
+			console.error("[NyaReader] 迁移失败", detail, e);
+			new Notice(
+				`NyaReader：迁移失败：${detail.error}\n（${plan.strategy === "whole-parent" ? "整体搬上级目录" : "分别搬子目录"}；` +
+					`${oldShelf} → ${plan.strategy === "whole-parent" ? anchor : newShelfDir}）`,
+				12000
+			);
 		}
 	}
 
