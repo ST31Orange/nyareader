@@ -6,7 +6,7 @@
  *
  * 书架根目录为 vault 可见路径 nyareader/library（非 .obsidian），保证文件被 vault 索引。
  */
-import { ItemView, Notice, TFile, TFolder, WorkspaceLeaf, setIcon } from "obsidian";
+import { ItemView, Menu, Notice, SuggestModal, TFile, TFolder, WorkspaceLeaf, setIcon } from "obsidian";
 import type NyaReaderPlugin from "../main";
 import { BookshelfService, SUPPORTED_BOOK_EXT, splitPath } from "../services/storage/BookshelfService";
 import type { BookshelfFolder, BookshelfLibrary, BookshelfSort } from "../services/storage/BookshelfService";
@@ -22,6 +22,35 @@ const SORT_OPTIONS: Array<{ value: BookshelfSort; label: string }> = [
 	{ value: "title", label: "书名" },
 	{ value: "progress", label: "阅读进度" },
 ];
+
+/**
+ * 文件夹选择器（Obsidian 没有公开的文件夹选择器，用 SuggestModal 自己做一个）。
+ * 支持直接输入新路径：vault 里不存在的目录会在移动时被创建。
+ */
+class FolderPickerModal extends SuggestModal<string> {
+	constructor(
+		app: import("obsidian").App,
+		private folders: string[],
+		private onPick: (path: string) => void
+	) {
+		super(app);
+		this.setPlaceholder("选择目标文件夹（也可直接输入新路径后回车）");
+	}
+
+	getSuggestions(query: string): string[] {
+		const q = query.trim().toLowerCase();
+		if (!q) return this.folders.slice(0, 200);
+		return this.folders.filter((f) => f.toLowerCase().includes(q)).slice(0, 200);
+	}
+
+	renderSuggestion(value: string, el: HTMLElement): void {
+		el.setText(value || "（vault 根目录）");
+	}
+
+	onChooseSuggestion(value: string): void {
+		this.onPick(value);
+	}
+}
 
 /** 迁移时的默认书库名。 */
 const DEFAULT_LIBRARY = "我的书库";
@@ -446,7 +475,44 @@ export class BookshelfView extends ItemView {
 			}
 			void this.openBook(path);
 		});
+		// 右键：移出书库 / 删除（"移出"是拖到文件栏做不到时的可靠替代）
+		card.addEventListener("contextmenu", (e) => {
+			e.preventDefault();
+			const menu = new Menu();
+			menu.addItem((i) =>
+				i
+					.setTitle("移出书库…")
+					.setIcon("folder-output")
+					.onClick(() => this.pickFolderAndMoveOut(path))
+			);
+			menu.addItem((i) =>
+				i
+					.setTitle("从书架移除（删除文件）")
+					.setIcon("trash")
+					.onClick(() => void this.deleteBook(path))
+			);
+			menu.showAtMouseEvent(e);
+		});
 		card.setAttribute("draggable", "true");
+		/**
+		 * 拖动时**只能由卡片自己作为拖源**。
+		 *
+		 * 用户实测到两个怪现象：
+		 * - 拖 azw3 到文件栏，落地的是**一个 jpg**（封面图被浏览器当成拖源）；
+		 * - 拖 md 完全没反应（md 没封面，卡片上显示的是 **SVG 占位图标**，SVG 默认也可拖）。
+		 *
+		 * 原因：卡片内部元素（`<img>` / `<svg>`）有各自的默认拖拽行为，会抢走拖源，
+		 * 于是我们设置的 vault 路径载荷根本没生效。
+		 * 这里在**捕获阶段**拦掉来自子元素的 dragstart，并把它们的默认拖拽关掉。
+		 */
+		card.addEventListener(
+			"dragstart",
+			(e) => {
+				const target = e.target as HTMLElement | null;
+				if (target && target !== card) e.preventDefault();
+			},
+			{ capture: true }
+		);
 		card.addEventListener("dragstart", (e) => {
 			this.draggingBookPath = path;
 			this.dragJustEnded = false;
@@ -454,8 +520,8 @@ export class BookshelfView extends ItemView {
 			if (dt) {
 				// 内部拖动：我们自己的 MIME（书架内移动）
 				dt.setData("application/x-nyareader-book", path);
-				// **拖出到 Obsidian 左侧文件列表**：Obsidian 的文件树按"vault 路径"
-				// 处理外部拖入，所以这里必须给纯路径（text/plain），不要包 JSON。
+				// **拖出到 Obsidian 左侧文件列表**：期望文件树按 vault 路径处理外部拖入，
+				// 所以这里给纯路径（text/plain），不要包 JSON。
 				dt.setData("text/plain", path);
 				// 常见编辑器/文件树还认 uri-list（同样给相对路径，避免被当成外部 URL）
 				try {
@@ -494,7 +560,11 @@ export class BookshelfView extends ItemView {
 
 		if (mode !== "compact") {
 			const cover = card.createDiv({ cls: "nyareader-shelf-cover" });
-			const placeholder = cover.createDiv({ cls: "nyareader-shelf-cover-placeholder" });
+			const placeholder = cover.createDiv({
+				cls: "nyareader-shelf-cover-placeholder",
+				// SVG 默认可拖 → 会抢走卡片的拖源（拖 md 完全没反应就是这个原因）
+				attr: { draggable: "false" },
+			});
 			setIcon(placeholder, "book-open");
 			const file = this.plugin.app.vault.getAbstractFileByPath(path);
 			if (file instanceof TFile) {
@@ -505,7 +575,9 @@ export class BookshelfView extends ItemView {
 						placeholder.remove();
 						// 不加 loading="lazy"：卡片是一次性渲染的，某些布局/虚拟滚动下
 						// 懒加载可能永远不触发，表现就是"封面随机不显示"。
-						const img = cover.createEl("img", { attr: { src: url, alt: "" } });
+						// draggable=false：否则浏览器会把封面图当作拖源 →
+						// 拖到文件栏落地的是"一个 jpg"而不是这本书（用户实测）。
+						const img = cover.createEl("img", { attr: { src: url, alt: "", draggable: "false" } });
 						img.addClass("nyareader-shelf-cover-img");
 						// 兜底：万一 URL 失效/解码失败，恢复占位而不是留白
 						img.addEventListener(
@@ -513,7 +585,10 @@ export class BookshelfView extends ItemView {
 							() => {
 								img.remove();
 								if (!cover.querySelector(".nyareader-shelf-cover-placeholder")) {
-									const fallback = cover.createDiv({ cls: "nyareader-shelf-cover-placeholder" });
+									const fallback = cover.createDiv({
+										cls: "nyareader-shelf-cover-placeholder",
+										attr: { draggable: "false" },
+									});
 									setIcon(fallback, "book-open");
 								}
 							},
@@ -660,8 +735,43 @@ export class BookshelfView extends ItemView {
 		});
 	}
 
-	/** 空白处放下时的默认文件夹：优先「未分类」，否则第一个文件夹，都没有就新建一个。 */
-	private defaultFolderFor(libraryRel: string): string {
+	/**
+	 * 选择目标文件夹并把书移出书库。
+	 *
+	 * 为什么要有这个入口：Obsidian 文件栏只接受它**自己** `dragManager` 的内部拖动
+	 * （drop 数据来自内部状态，不从 `dataTransfer` 读），所以"从书架拖到文件栏"
+	 * 在 Obsidian 里做不到。要用公开 API 把书移出去，只能给一个显式入口。
+	 */
+	private pickFolderAndMoveOut(path: string): void {
+		const folders = this.plugin.app.vault
+			.getAllLoadedFiles()
+			.filter((f): f is TFolder => f instanceof TFolder)
+			// 排除书库自身及其子目录（"移出"到书库内没有意义，那是"移动"）
+			.filter((f) => !f.path.startsWith(this.shelfDir))
+			.map((f) => f.path)
+			.sort();
+		new FolderPickerModal(this.app, folders, (target) => void this.moveOutOfShelf(path, target)).open();
+	}
+
+	/** 真正执行"移出书库"。 */
+	private async moveOutOfShelf(path: string, targetDir: string): Promise<void> {
+		try {
+			const dest = await this.service.moveBookToVaultPath(path, targetDir);
+			if (!dest) {
+				new Notice("NyaReader：移出失败（文件不存在或目标不可用）。", 5000);
+				return;
+			}
+			// 书已不在书库：索引里的路径也要跟着改，否则进度/批注会指向旧路径
+			const entry = this.plugin.bookIndex.list().find((e) => e.path === path);
+			if (entry) await this.plugin.bookIndex.upsert({ ...entry, path: dest });
+			new Notice(`NyaReader：已移出到「${dest}」。`, 5000);
+			void this.render();
+		} catch (e) {
+			new Notice(`NyaReader：移出失败：${e instanceof Error ? e.message : String(e)}`, 6000);
+		}
+	}
+
+	/** 空白处放下时的默认文件夹：优先「未分类」，否则第一个文件夹，都没有就新建一个。 */	private defaultFolderFor(libraryRel: string): string {
 		const folders = this.orderedFolders(libraryRel);
 		const existing = folders.find((f) => f.relPath === "未分类") ?? folders[0];
 		return existing?.relPath ?? "未分类";

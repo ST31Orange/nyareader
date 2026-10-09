@@ -169,8 +169,42 @@ describe("importVaultBooks：把 vault 里已有的书收进书库", () => {
 	});
 });
 
-describe("isInsideLibrary：前缀判定（兼容自定义书架目录）", () => {
-	it("书库内/外判定正确，且不依赖层级数", () => {
+describe("moveBookToVaultPath：把书移出书库（拖到文件栏做不到时的可靠入口）", () => {
+	it("移到 vault 里任意目录，书与旧批注侧车一起走", async () => {
+		const a = memAdapter([
+			`${LIB}/我的书库/科幻/三体.epub`,
+			`${LIB}/我的书库/科幻/三体.epub.annotations.json`,
+		]);
+		const svc = mk(a);
+		const dest = await svc.moveBookToVaultPath(`${LIB}/我的书库/科幻/三体.epub`, "我的笔记/读书");
+		expect(dest).toBe("我的笔记/读书/三体.epub");
+		expect(a.files.has("我的笔记/读书/三体.epub")).toBe(true);
+		expect(a.files.has("我的笔记/读书/三体.epub.annotations.json")).toBe(true);
+		expect(a.files.has(`${LIB}/我的书库/科幻/三体.epub`)).toBe(false);
+	});
+
+	it("目标目录不存在 → 自动创建", async () => {
+		const a = memAdapter([`${LIB}/我的书库/科幻/a.epub`]);
+		const svc = mk(a);
+		expect(await svc.moveBookToVaultPath(`${LIB}/我的书库/科幻/a.epub`, "全新/深层/目录")).toBe(
+			"全新/深层/目录/a.epub"
+		);
+	});
+
+	it("目标已有同名文件 → 自动 (1)，不覆盖", async () => {
+		const a = memAdapter([`${LIB}/我的书库/科幻/a.epub`, "out/a.epub"]);
+		const svc = mk(a);
+		expect(await svc.moveBookToVaultPath(`${LIB}/我的书库/科幻/a.epub`, "out")).toBe("out/a (1).epub");
+		expect(a.files.has("out/a.epub")).toBe(true);
+	});
+
+	it("文件不存在 → 返回 null（不报错）", async () => {
+		const svc = mk(memAdapter([]));
+		expect(await svc.moveBookToVaultPath(`${LIB}/我的书库/科幻/幽灵.epub`, "out")).toBeNull();
+	});
+});
+
+describe("isInsideLibrary：前缀判定（兼容自定义书架目录）", () => {	it("书库内/外判定正确，且不依赖层级数", () => {
 		const svc = mk(memAdapter([]));
 		expect(svc.isInsideLibrary(`${LIB}/我的书库/科幻/a.epub`)).toBe(true);
 		expect(svc.isInsideLibrary(`${LIB}/a/b/c/d/e.epub`)).toBe(true);

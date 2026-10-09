@@ -297,6 +297,38 @@ export class BookshelfService {
 		return pairs;
 	}
 
+	/**
+	 * 把书**移出书库**到 vault 里任意目录（含其旧批注侧车）。
+	 *
+	 * 为什么需要它：Obsidian 的文件栏只接受它自己 `dragManager` 的内部拖动
+	 * （drop 数据来自内部状态，**不从 `dataTransfer` 读**），所以"从插件拖到文件栏"
+	 * 在 Obsidian 里**做不到**。移出书库必须有另一个入口 —— 就是这里。
+	 *
+	 * @returns 目标路径；失败返回 null
+	 */
+	async moveBookToVaultPath(vaultPath: string, targetDir: string): Promise<string | null> {
+		const src = this.normalize(vaultPath);
+		const dir = this.normalize(targetDir);
+		if (!src || !(await this.adapter.exists(src))) return null;
+		await this.adapter.mkdir(dir).catch(() => undefined);
+		const fileName = src.slice(src.lastIndexOf("/") + 1);
+		const dest = await this.uniquePath(dir, fileName);
+		const sidecars: Array<{ from: string; to: string }> = [];
+		for (const [from, to] of this.adjacentSidecarPairs(src, dest)) {
+			if (await this.adapter.exists(from).catch(() => false)) sidecars.push({ from, to });
+		}
+		await this.adapter.rename(src, dest);
+		for (const { from, to } of sidecars) {
+			try {
+				if (await this.adapter.exists(to).catch(() => false)) continue;
+				await this.adapter.rename(from, to);
+			} catch {
+				/* 侧车失败不影响书本身 */
+			}
+		}
+		return dest;
+	}
+
 	/** 撤销 {@link importVaultBooks} 的一次导入（逆序执行 steps）。 */
 	async undoImport(result: VaultImportResult): Promise<boolean> {
 		let ok = true;
