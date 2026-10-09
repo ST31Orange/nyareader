@@ -8,8 +8,8 @@
  */
 import { ItemView, Notice, TFile, TFolder, WorkspaceLeaf, setIcon } from "obsidian";
 import type NyaReaderPlugin from "../main";
-import { BookshelfService, BookshelfSort, splitPath } from "../services/storage/BookshelfService";
-import type { BookshelfFolder, BookshelfLibrary } from "../services/storage/BookshelfService";
+import { BookshelfService, SUPPORTED_BOOK_EXT, splitPath } from "../services/storage/BookshelfService";
+import type { BookshelfFolder, BookshelfLibrary, BookshelfSort } from "../services/storage/BookshelfService";
 import { BOOKSHELF_VIEW_TYPE } from "./BookshelfViewTypes";
 import { PromptModal } from "./components/PromptModal";
 import { ConfirmModal } from "./components/ConfirmModal";
@@ -46,6 +46,8 @@ export class BookshelfView extends ItemView {
 	private dropHandled = false;
 	/** 刚刚结束了一次拖动：用于吞掉浏览器补发的那次 click（否则松手就会打开书） */
 	private dragJustEnded = false;
+	/** 正在被拖动的**外部**（Obsidian 界面内）文件路径：载荷不可读时的兜底 */
+	private draggedFromUi: string | null = null;
 
 	constructor(leaf: WorkspaceLeaf, private plugin: NyaReaderPlugin) {
 		super(leaf);
@@ -135,6 +137,31 @@ export class BookshelfView extends ItemView {
 		);
 		this.registerEvent(this.app.workspace.on("layout-change", () => this.syncProgressFromIndex()));
 		this.attachRootDragFallback();
+		this.attachExternalDragCapture();
+	}
+
+	/**
+	 * 兜底：记录"Obsidian 界面里正在被拖动的文件路径"。
+	 *
+	 * 为什么需要：Obsidian 文件栏的拖动**不保证**在 `dataTransfer` 里带可读载荷
+	 * （它靠内部拖放状态），所以只解析载荷会失败 —— 用户实测"拖任何文件都说没识别到"。
+	 * 但 Obsidian 的文件项/标签页都带 `data-path` 属性，在**拖动开始**时记下它，
+	 * 拖放时就能作为候选，完全不依赖载荷格式。
+	 */
+	private attachExternalDragCapture(): void {
+		// 用捕获阶段：早于 Obsidian 自己的处理，拿到最原始的目标元素
+		this.registerDomEvent(
+			document,
+			"dragstart",
+			(e) => {
+				const target = e.target as HTMLElement | null;
+				const withPath = target?.closest?.("[data-path]") as HTMLElement | null;
+				this.draggedFromUi = withPath?.getAttribute("data-path") ?? null;
+			},
+			{ capture: true }
+		);
+		// ⚠️ 不要在这里清空：`dragend` 有可能**先于** `drop` 派发，
+		// 定时清理会把兜底路径赶在 drop 之前删掉。改由 drop 处理器自己清。
 	}
 
 	async onClose(): Promise<void> {
@@ -573,22 +600,31 @@ export class BookshelfView extends ItemView {
 	 * 只有"确实存在且是电子书"的候选才会被处理，绝不会误搬无关文件。
 	 */
 	private async importFromVaultDrop(dt: DataTransfer | null, libraryRel: string, folderRel: string): Promise<void> {
-		if (!dt) return;
 		const byType: Record<string, string | undefined> = {};
-		const types = Array.from(dt.types ?? []);
+		const types = dt ? Array.from(dt.types ?? []) : [];
 		for (const type of types) {
 			try {
-				byType[type] = dt.getData(type);
+				byType[type] = dt?.getData(type) ?? undefined;
 			} catch {
 				byType[type] = undefined;
 			}
 		}
-		// 真实载荷打进控制台：万一遇到没覆盖的格式，一眼就能看出它长什么样
-		console.debug("[NyaReader] 拖放载荷", { types, byType });
+		// 兜底候选：拖动开始时从 Obsidian 元素上记下的 data-path（不依赖载荷格式）
+		const fromUi = this.draggedFromUi;
+		// 真实载荷与兜底都打进控制台，便于排查没覆盖的格式
+		console.debug("[NyaReader] 拖放载荷", { types, byType, fromUi });
 		const vault = this.plugin.app.vault;
-		const candidates = parseVaultDropPaths({ byType, types }, (p) => vault.getAbstractFileByPath(p) instanceof TFile);
+		// 注意：这里**只**校验"vault 里确实有这个文件"，格式过滤交给 importVaultBooks
+		const isExistingFile = (p: string): boolean => vault.getAbstractFileByPath(p) instanceof TFile;
+		const candidates = parseVaultDropPaths({ byType, types }, isExistingFile);
+		if (fromUi && isExistingFile(fromUi) && !candidates.includes(fromUi)) candidates.unshift(fromUi);
+		// 本次拖动已消费：立刻清掉，避免影响下一次
+		this.draggedFromUi = null;
 		if (!candidates.length) {
-			new Notice("NyaReader：没识别到可导入的电子书（支持 epub/pdf/mobi/azw3/txt）。", 5000);
+			new Notice(
+				"NyaReader：没识别到可导入的书。可先用右键「用 NyaReader 打开」或把文件移到书库目录。",
+				6000
+			);
 			return;
 		}
 		const { imported, results } = await this.service.importVaultBooks(candidates, libraryRel, folderRel, "move");
@@ -634,13 +670,23 @@ export class BookshelfView extends ItemView {
 	private async importDropped(files: FileList | undefined, libraryRel: string, folderRel: string): Promise<void> {
 		if (!files || !files.length) return;
 		const items: Array<{ name: string; data: ArrayBuffer }> = [];
+		const skipped: string[] = [];
 		for (const f of Array.from(files)) {
+			// ⚠️ 必须用**唯一**的白名单 SUPPORTED_BOOK_EXT。这里曾经手写一份
+			// ["epub","pdf","mobi","azw3","azw","txt"]，加 md 支持时漏改 → 从系统拖 md 被拒。
 			const { ext } = splitPath(f.name);
-			if (!["epub", "pdf", "mobi", "azw3", "azw", "txt"].includes(ext)) continue;
+			if (!SUPPORTED_BOOK_EXT.has(ext.toLowerCase())) {
+				skipped.push(f.name);
+				continue;
+			}
 			items.push({ name: f.name, data: await f.arrayBuffer() });
 		}
 		if (!items.length) {
-			new Notice("NyaReader：没有支持的电子书格式。");
+			new Notice(
+				`NyaReader：没有支持的格式（${skipped.slice(0, 3).join("、") || "空"}）。` +
+					`支持 ${[...SUPPORTED_BOOK_EXT].join("/")}。`,
+				6000
+			);
 			return;
 		}
 		const ok = await this.service.importFiles(items, libraryRel, folderRel);

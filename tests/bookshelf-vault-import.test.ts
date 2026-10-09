@@ -111,6 +111,15 @@ describe("importVaultBooks：把 vault 里已有的书收进书库", () => {
 		expect(a.files.has("books/cover.png")).toBe(true);
 	});
 
+	it("**md 也能收进书库**（回归：曾经系统拖 md 报「没有支持的格式」）", async () => {
+		const a = memAdapter(["notes/读书笔记.md", "notes/另一个.markdown"]);
+		const svc = mk(a);
+		const { imported } = await svc.importVaultBooks(["notes/读书笔记.md", "notes/另一个.markdown"], "我的书库", "笔记", "move");
+		expect(imported).toBe(2);
+		expect(a.files.has(`${LIB}/我的书库/笔记/读书笔记.md`)).toBe(true);
+		expect(a.files.has(`${LIB}/我的书库/笔记/另一个.markdown`)).toBe(true);
+	});
+
 	it("多本一次拖入，逐本处理", async () => {
 		const a = memAdapter(["books/a.epub", "books/b.mobi", "books/c.azw3"]);
 		const svc = mk(a);
