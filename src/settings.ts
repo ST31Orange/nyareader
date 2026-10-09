@@ -5,6 +5,7 @@
  * 本插件只保留 UI 级设置（源/目标语言），与 NyaLingo 配置互不干扰。
  */
 import type { ReaderSettings, ReaderTheme } from "./types";
+import { DEFAULT_READER_SETTINGS } from "./types";
 
 /** 书架卡片显示模式（按区域生效） */
 export type BookshelfDisplayMode = "full" | "compact" | "list";
@@ -75,7 +76,7 @@ export const DEFAULT_SETTINGS: NyaReaderSettings = {
 		theme: "light",
 		layout: "single",
 		scrollMode: false,
-		pageWidth: 420,
+		pageWidth: DEFAULT_READER_SETTINGS.pageWidth,
 	},
 	translation: { ...DEFAULT_TRANSLATION_SETTINGS },
 	ui: { ...DEFAULT_UI_SETTINGS },

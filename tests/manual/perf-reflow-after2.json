@@ -1,0 +1,254 @@
+{
+  "meta": {
+    "label": "after2",
+    "generatedAt": "2026-10-09T10:40:22.819Z",
+    "engineEntry": "src/services/books/formats/mobi/HtmlDocEngine.ts",
+    "viewport": "1200x800 (--headless=new)",
+    "method": "真实 Edge + 真实 HtmlDocEngine（esbuild IIFE）；performance.now() 夹住被测调用；longtask = PerformanceObserver 浏览器自量 >50ms 长任务",
+    "params": {
+      "paras": 28000,
+      "batches": 50,
+      "appendFraction": 0.02
+    }
+  },
+  "main": {
+    "cfg": {
+      "paras": 28000,
+      "batches": 50,
+      "appendFraction": 0.02
+    },
+    "longTaskSupported": true,
+    "mountMs": 4361,
+    "pages": 2001,
+    "pageW": 1090,
+    "stride": 1130,
+    "fontChange": {
+      "to20Ms": 328,
+      "to20UntilFrameMs": 1799,
+      "pagesAt20": 2334,
+      "back18Ms": 0,
+      "back18UntilFrameMs": 1918,
+      "pagesBack18": 2001,
+      "nudgeZoomSyncMs": 391,
+      "nudgeZoomUntilFrameMs": 1835
+    },
+    "append": {
+      "batches": 50,
+      "batchParas": 560,
+      "syncTotalMs": 50,
+      "syncMaxMs": 1.3,
+      "syncAvgMs": 1,
+      "settleMs": 7646,
+      "totalMs": 7696,
+      "pagesBefore": 2154,
+      "pagesAfter": 4308,
+      "longTasks": {
+        "count": 5,
+        "totalMs": 3160,
+        "maxMs": 1916,
+        "worst": [
+          {
+            "start": 12361,
+            "dur": 1916
+          },
+          {
+            "start": 14448,
+            "dur": 572
+          },
+          {
+            "start": 14448,
+            "dur": 572
+          },
+          {
+            "start": 14277,
+            "dur": 50
+          },
+          {
+            "start": 14277,
+            "dur": 50
+          }
+        ]
+      }
+    },
+    "appendSpread": {
+      "batches": 50,
+      "loopWallMs": 249,
+      "syncTotalMs": 28,
+      "syncMaxMs": 0.9,
+      "totalMs": 14168,
+      "pagesAfter": 6462,
+      "longTasks": {
+        "count": 2,
+        "totalMs": 1062,
+        "maxMs": 531,
+        "worst": [
+          {
+            "start": 22352,
+            "dur": 531
+          },
+          {
+            "start": 22352,
+            "dur": 531
+          }
+        ]
+      }
+    },
+    "zoomBurst": {
+      "calls": 10,
+      "syncMs": 1,
+      "untilFrameMs": 14437,
+      "totalMs": 14754,
+      "longTasks": {
+        "count": 2,
+        "totalMs": 28868,
+        "maxMs": 14434,
+        "worst": [
+          {
+            "start": 36141,
+            "dur": 14434
+          },
+          {
+            "start": 36141,
+            "dur": 14434
+          }
+        ]
+      }
+    },
+    "jump": {
+      "anchorId": "nyar-anchor-55800",
+      "anchorExists": true,
+      "syncMs": 1,
+      "totalMs": 46,
+      "longTasks": {
+        "count": 0,
+        "totalMs": 0,
+        "maxMs": 0,
+        "worst": []
+      },
+      "reachedLocation": "6643",
+      "visibleColumn": null
+    },
+    "integrity": {
+      "markerIsLastChild": true,
+      "markerOffsetLeft": 7300930,
+      "pagesMatchesMarker": true,
+      "totalPagesGrew": true,
+      "doubleActive": false,
+      "errors": []
+    }
+  },
+  "rawBreakdown": {
+    "cfg": {
+      "paras": 28000,
+      "batches": 50
+    },
+    "pages0": 2154,
+    "insertOnlyMs": 16,
+    "singleFullLayoutMs": 346,
+    "pagesAfterInsert": 4308
+  },
+  "gridProbe": null,
+  "lazyJump": {
+    "cfg": {
+      "initialParas": 400,
+      "batches": 25,
+      "chunkParas": 800
+    },
+    "pagesInitial": 31,
+    "preload": {
+      "batches": 25,
+      "chunkParas": 800,
+      "wallMs": 117,
+      "syncMaxMs": 1.2,
+      "pagesAfterAppend": 1570
+    },
+    "jump": {
+      "anchorId": "nyar-anchor-20200",
+      "anchorExists": true,
+      "callMs": 0,
+      "pagesAfter": 1570,
+      "location": "9895",
+      "visibleColumn": null
+    },
+    "actionTotalMs": 914,
+    "longTasks": {
+      "count": 4,
+      "totalMs": 1594,
+      "maxMs": 563,
+      "worst": [
+        {
+          "start": 70750,
+          "dur": 563
+        },
+        {
+          "start": 70750,
+          "dur": 563
+        },
+        {
+          "start": 70516,
+          "dur": 234
+        },
+        {
+          "start": 70516,
+          "dur": 234
+        }
+      ]
+    },
+    "blocksBefore": 403,
+    "blocksAfter": 20528,
+    "layoutStates": [
+      {
+        "busy": true,
+        "reason": "settings",
+        "elapsedMs": null
+      },
+      {
+        "busy": false,
+        "reason": "settings",
+        "elapsedMs": 2
+      },
+      {
+        "busy": true,
+        "reason": "settings",
+        "elapsedMs": null
+      },
+      {
+        "busy": false,
+        "reason": "settings",
+        "elapsedMs": 0
+      },
+      {
+        "busy": true,
+        "reason": "settings",
+        "elapsedMs": null
+      },
+      {
+        "busy": false,
+        "reason": "settings",
+        "elapsedMs": 1
+      },
+      {
+        "busy": true,
+        "reason": "append",
+        "elapsedMs": null
+      },
+      {
+        "busy": false,
+        "reason": "append",
+        "elapsedMs": 224
+      }
+    ]
+  },
+  "integrityRegression": null,
+  "fontProbe": {
+    "cfg": {
+      "paras": 2000
+    },
+    "fontsReadyAfterMs": 38,
+    "fontsStatus": "loaded",
+    "fontsSizeAfterWait": 1,
+    "layoutAfterWaitMs": 0,
+    "fontsReadyLateMs": 38,
+    "paragraphs": 2000
+  }
+}

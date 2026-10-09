@@ -1,0 +1,80 @@
+{
+  "meta": {
+    "label": "dbg3",
+    "generatedAt": "2026-10-09T11:11:51.867Z",
+    "engineEntry": "src/services/books/formats/mobi/HtmlDocEngine.ts",
+    "viewport": "1200x800 (--headless=new)",
+    "method": "真实 Edge + 真实 HtmlDocEngine（esbuild IIFE）；performance.now() 夹住被测调用；longtask = PerformanceObserver 浏览器自量 >50ms 长任务",
+    "params": {
+      "paras": 20000,
+      "batches": 50,
+      "appendFraction": 0.02
+    }
+  },
+  "main": null,
+  "fontAtSize": null,
+  "rawBreakdown": null,
+  "gridProbe": null,
+  "lazyJump": null,
+  "integrityRegression": null,
+  "fontProbe": null,
+  "pageTurns": {
+    "cfg": {
+      "initialParas": 400,
+      "chapters": 80,
+      "chunkParas": 350,
+      "turns": 100
+    },
+    "pagesInitial": 29,
+    "buildMs": 948,
+    "pages": 2136,
+    "totalPagesInfo": {
+      "pages": 2136,
+      "estimated": true,
+      "chapters": 143,
+      "measuredChapters": 2,
+      "estimatedChapters": 141,
+      "estimatedFraction": 0.9863849765258216,
+      "charsPerPage": 699.72,
+      "windowFrom": 0,
+      "windowTo": 1
+    },
+    "next": {
+      "dir": "next",
+      "times": 100,
+      "syncMs": 37,
+      "totalMs": 50,
+      "maxCallMs": 10,
+      "changedTurns": 99,
+      "monotonic": true,
+      "firstLocation": 7,
+      "lastLocation": 494,
+      "longTasks": {
+        "count": 0,
+        "totalMs": 0,
+        "maxMs": 0,
+        "worst": []
+      }
+    },
+    "prev": {
+      "dir": "prev",
+      "times": 100,
+      "syncMs": 32,
+      "totalMs": 50,
+      "maxCallMs": 9.5,
+      "changedTurns": 99,
+      "monotonic": true,
+      "firstLocation": 489,
+      "lastLocation": 22,
+      "longTasks": {
+        "count": 0,
+        "totalMs": 0,
+        "maxMs": 0,
+        "worst": []
+      }
+    },
+    "pagesAfter": 2053,
+    "blocksAfter": 407
+  },
+  "estimateDeviation": null
+}

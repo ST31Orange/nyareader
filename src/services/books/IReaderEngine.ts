@@ -3,7 +3,9 @@
  * 各格式（EPUB/PDF/MOBi/AZW3/TXT）实现此接口，视图层只与接口通信，
  * 保证引擎可替换、可单测。
  */
-import type { BookModel, ReaderSettings } from "../../types";
+import type { BookModel, ReaderSettings, RelayoutState } from "../../types";
+import type { HighlightColor } from "../annotations/AnnotationModel";
+import type { AnchorKind, AnchorLocateQuality, AnnotationAnchor, TextQuote } from "../annotations/AnnotationAnchor";
 
 /** 缩放模式：适应宽度 / 适应高度 / 自定义百分比 */
 export type ZoomMode = "fit-width" | "fit-height" | "custom";
@@ -54,6 +56,55 @@ export interface AnnotationTarget {
 	scale?: number;
 }
 
+/**
+ * 引擎高亮输入：全量重放（`setHighlights`）与增量（`addHighlight`）共用同一形状。
+ * 锚点是三层冗余模型（结构定位 + 文本指纹 + 进度兜底），见 `AnnotationAnchor`。
+ */
+export interface EngineHighlight {
+	id: string;
+	anchor: AnnotationAnchor;
+	color: HighlightColor;
+	hasNote: boolean;
+	text: string;
+}
+
+/**
+ * 单条高亮的实际定位结果 —— **降级链必须可观测**：
+ * `quality` 取值 `exact-range` / `quote-unique` / `quote-first` / `progression-only`，
+ * UI 据此把 `approximate` 的条目标出"位置可能不准"（不允许静默吞掉失败）。
+ */
+export interface EngineHighlightPlacement {
+	id: string;
+	quality: AnchorLocateQuality;
+	approximate: boolean;
+	reason: string;
+	/**
+	 * 是否已真的画出来。
+	 * `false` 表示目标章节/段落当前不在 DOM 里（懒加载补章中 / TXT 虚拟窗口外），
+	 * 补章或滚动回该处后会重新应用 —— 这不是"位置不准"，所以与 `approximate` 分开表达。
+	 */
+	rendered?: boolean;
+}
+
+/**
+ * 选区锚点草稿：**引擎最懂 DOM**，由它给出章节/块锚点 + 字符区间 + 指纹前后文；
+ * `quote` 由 Controller/引擎用同一套归一化函数补全（见 `AnnotationAnchor`）。
+ */
+export interface SelectionAnchorDraft {
+	kind: AnchorKind;
+	primary: string;
+	charStart?: number;
+	charEnd?: number;
+	paraIndex?: number;
+	cssSelector?: string;
+	progression?: number;
+	quote?: TextQuote;
+	/** 选中原文（拿不到结构化 quote 时兜底 exact） */
+	text?: string;
+	/** 引擎自述结构信息缺失（只能靠指纹/进度兜底） */
+	approximate?: boolean;
+}
+
 export interface IReaderEngine {
 	readonly format: string;
 	/** 挂载到容器；容器尺寸变化时引擎应自动重排 */
@@ -75,6 +126,31 @@ export interface IReaderEngine {
 	showAnnotation(target: AnnotationTarget): void;
 	/** 可选：隐藏指定批注的可见高亮（删除批注时用） */
 	hideAnnotation?(target: AnnotationTarget): void;
+	/**
+	 * 可选：**全量设置高亮**（打开书/重开书/增删改后调用）。
+	 * 引擎按 `anchor` 解析可见范围（结构定位 → 文本指纹 → 进度兜底）；
+	 * 解析失败只按 `progression` 跳转、不抛异常，并把原因写入 {@link getHighlightPlacements}。
+	 */
+	setHighlights?(list: readonly EngineHighlight[]): void;
+	/** 可选：增量添加一条高亮（不必全量重放） */
+	addHighlight?(highlight: EngineHighlight): void;
+	/** 可选：移除一条高亮 */
+	removeHighlight?(id: string): void;
+	/** 可选：点击高亮 → UI 打开编辑（CSS Custom Highlight API 路径下由引擎自建命中检测） */
+	setHighlightClickHandler?(handler: (id: string) => void): void;
+	/** 可选：最近一次定位的降级结果（UI 标注"位置可能不准"） */
+	getHighlightPlacements?(): readonly EngineHighlightPlacement[];
+	/**
+	 * 可选：**内容/布局结构变化后重新解析并重绘高亮**。
+	 *
+	 * 引擎自己会在重排/补章/切模式后调用；外部（例如"按章独立分页"把章节移入布局区、
+	 * 或激活某个冷区章节之后）也必须调一次，否则那些章节里的高亮不会自动出现。
+	 */
+	refreshHighlights?(): void;
+	/** 可选：跳到某条高亮（能解析就滚到命中处，否则按 `progression` 兜底） */
+	focusHighlight?(id: string): void;
+	/** 可选：用当前选区生成锚点草稿（引擎提供章节/段落 + 字符偏移 + 前后文） */
+	getSelectionAnchor?(): SelectionAnchorDraft | null;
 	/** 获取需要加载的附加资源（pdf worker 等），由主插件统一初始化 */
 	on<E extends ReaderEngineEventName>(event: E, handler: (payload: ReaderEngineEvents[E]) => void): void;
 	off<E extends ReaderEngineEventName>(event: E, handler: (payload: ReaderEngineEvents[E]) => void): void;
@@ -86,6 +162,14 @@ export interface IReaderEngine {
 	getZoom?(): { mode: ZoomMode; scale: number; percent: number };
 	/** 可选：分页式显示时的总页数（滚动式格式在分页模式下用） */
 	getTotalPages?(): number;
+	/**
+	 * 可选：`getTotalPages()` 是否为**估计值**。
+	 *
+	 * 按章独立分页后，只有"当前章 ±1"参与真实分栏布局，其余章节的页数按字符数插值
+	 * （实测偏差约 +6%，随阅读逐章收敛）。调用方据此在页码上标 `≈`，
+	 * 避免把估计值当成精确值展示。
+	 */
+	isPageCountEstimated?(): boolean;
 	/** 可选：在滚动/分页模式间切换并保持当前阅读位置（文档式格式实现） */
 	switchMode?(scrollMode: boolean): void;
 	/** 可选：按方向键逐行滚动（滚动模式下 ↑/↓ 用；方向 1=向下，-1=向上） */
@@ -96,6 +180,19 @@ export interface IReaderEngine {
 	 * 未实现时调用方必须用可选链安全跳过。
 	 */
 	notifyContentAppended?(html: string): void;
+	/**
+	 * 可选：按**文档内相对进度**（0~1）跳转，用于底部可拖动进度条。
+	 *
+	 * 与 goTo(location) 的区别：这里的入参语义与 currentPercentage() 严格互逆，
+	 * 不依赖"总页数已知"，因此在大文件只加载了部分内容时也能正确定位。
+	 * 未实现时调用方退回 goTo(百分比定位符)。
+	 */
+	goToFraction?(fraction: number): void;
+	/**
+	 * 可选：注册「正在重新排版」状态回调（大文件改字号/版式时用于给出反馈）。
+	 * 引擎应在阻塞性重排**开始前**发 busy:true、结束后发 busy:false（带耗时）。
+	 */
+	setLayoutStateHandler?(handler: (state: RelayoutState) => void): void;
 	destroy(): void;
 }
 

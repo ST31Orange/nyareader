@@ -1,0 +1,460 @@
+{
+  "meta": {
+    "label": "d4",
+    "generatedAt": "2026-10-09T11:12:25.618Z",
+    "engineEntry": "src/services/books/formats/mobi/HtmlDocEngine.ts",
+    "viewport": "1200x800 (--headless=new)",
+    "method": "真实 Edge + 真实 HtmlDocEngine（esbuild IIFE）；performance.now() 夹住被测调用；longtask = PerformanceObserver 浏览器自量 >50ms 长任务",
+    "params": {
+      "paras": 20000,
+      "batches": 50,
+      "appendFraction": 0.02
+    }
+  },
+  "main": {
+    "cfg": {
+      "paras": 20000,
+      "batches": 50,
+      "appendFraction": 0.02
+    },
+    "longTaskSupported": true,
+    "mountMs": 426,
+    "pages": 1499,
+    "pageW": 1090,
+    "stride": 1130,
+    "fontChange": {
+      "to20Ms": 14,
+      "to20UntilFrameMs": 31,
+      "pagesAt20": 1757,
+      "back18Ms": 5,
+      "back18UntilFrameMs": 33,
+      "pagesBack18": 1499,
+      "nudgeZoomSyncMs": 6,
+      "nudgeZoomUntilFrameMs": 33
+    },
+    "append": {
+      "batches": 50,
+      "batchParas": 400,
+      "syncTotalMs": 21,
+      "syncMaxMs": 0.8,
+      "syncAvgMs": 0.4,
+      "settleMs": 429,
+      "totalMs": 450,
+      "pagesBefore": 1499,
+      "pagesAfter": 3015,
+      "longTasks": {
+        "count": 0,
+        "totalMs": 0,
+        "maxMs": 0,
+        "worst": []
+      }
+    },
+    "appendSpread": {
+      "batches": 50,
+      "loopWallMs": 244,
+      "syncTotalMs": 28,
+      "syncMaxMs": 1.1,
+      "totalMs": 650,
+      "pagesAfter": 4531,
+      "longTasks": {
+        "count": 0,
+        "totalMs": 0,
+        "maxMs": 0,
+        "worst": []
+      }
+    },
+    "zoomBurst": {
+      "calls": 10,
+      "syncMs": 64,
+      "untilFrameMs": 67,
+      "totalMs": 384,
+      "longTasks": {
+        "count": 2,
+        "totalMs": 130,
+        "maxMs": 65,
+        "worst": [
+          {
+            "start": 2541,
+            "dur": 65
+          },
+          {
+            "start": 2541,
+            "dur": 65
+          }
+        ]
+      }
+    },
+    "jump": {
+      "anchorId": "nyar-anchor-39800",
+      "anchorExists": true,
+      "syncMs": 12,
+      "totalMs": 33,
+      "longTasks": {
+        "count": 0,
+        "totalMs": 0,
+        "maxMs": 0,
+        "worst": []
+      },
+      "reachedLocation": "33",
+      "visibleColumn": 14
+    },
+    "integrity": {
+      "markerIsLastChild": true,
+      "markerOffsetLeft": 31640,
+      "pagesMatchesMarker": false,
+      "totalPagesGrew": true,
+      "doubleActive": false,
+      "errors": []
+    }
+  },
+  "fontAtSize": {
+    "cfg": {
+      "paras": 28000,
+      "batches": 50,
+      "chunkParas": 1120
+    },
+    "steps": [
+      {
+        "fontSize": 19,
+        "syncMs": 7,
+        "untilFrameMs": 33,
+        "pages": 6785,
+        "longTasks": {
+          "count": 0,
+          "totalMs": 0,
+          "maxMs": 0,
+          "worst": []
+        }
+      },
+      {
+        "fontSize": 20,
+        "syncMs": 7,
+        "untilFrameMs": 33,
+        "pages": 7442,
+        "longTasks": {
+          "count": 0,
+          "totalMs": 0,
+          "maxMs": 0,
+          "worst": []
+        }
+      },
+      {
+        "fontSize": 18,
+        "syncMs": 7,
+        "untilFrameMs": 33,
+        "pages": 6348,
+        "longTasks": {
+          "count": 0,
+          "totalMs": 0,
+          "maxMs": 0,
+          "worst": []
+        }
+      }
+    ],
+    "pagesAtMount": 2105,
+    "pagesBeforeChange": 6348,
+    "blocksBefore": 407,
+    "pagesAfter": 6348
+  },
+  "rawBreakdown": null,
+  "gridProbe": null,
+  "lazyJump": {
+    "cfg": {
+      "initialParas": 400,
+      "batches": 25,
+      "chunkParas": 800
+    },
+    "pagesInitial": 29,
+    "preload": {
+      "batches": 25,
+      "chunkParas": 800,
+      "wallMs": 114,
+      "syncMaxMs": 1.4,
+      "pagesAfterAppend": 1530
+    },
+    "jump": {
+      "anchorId": "nyar-anchor-20200",
+      "anchorExists": true,
+      "callMs": 11,
+      "pagesAfter": 1497,
+      "location": "97",
+      "visibleColumn": 14
+    },
+    "actionTotalMs": 150,
+    "longTasks": {
+      "count": 0,
+      "totalMs": 0,
+      "maxMs": 0,
+      "worst": []
+    },
+    "blocksBefore": 407,
+    "blocksAfter": 407,
+    "layoutStates": [
+      {
+        "busy": true,
+        "reason": "settings",
+        "elapsedMs": null
+      },
+      {
+        "busy": false,
+        "reason": "settings",
+        "elapsedMs": 3
+      },
+      {
+        "busy": true,
+        "reason": "settings",
+        "elapsedMs": null
+      },
+      {
+        "busy": false,
+        "reason": "settings",
+        "elapsedMs": 0
+      },
+      {
+        "busy": true,
+        "reason": "settings",
+        "elapsedMs": null
+      },
+      {
+        "busy": false,
+        "reason": "settings",
+        "elapsedMs": 5
+      },
+      {
+        "busy": true,
+        "reason": "append",
+        "elapsedMs": null
+      },
+      {
+        "busy": false,
+        "reason": "append",
+        "elapsedMs": 4
+      },
+      {
+        "busy": true,
+        "reason": "append",
+        "elapsedMs": null
+      },
+      {
+        "busy": false,
+        "reason": "append",
+        "elapsedMs": 4
+      }
+    ]
+  },
+  "integrityRegression": {
+    "cfg": {
+      "paras": 28000,
+      "batches": 25,
+      "chunkParas": 2400
+    },
+    "checks": [
+      {
+        "name": "跳到 80% 后总页数不变",
+        "pass": false,
+        "detail": "6432 vs 6651"
+      },
+      {
+        "name": "跳到 80% 后正文块数不变（窗口+冷区）",
+        "pass": false,
+        "detail": null
+      },
+      {
+        "name": "跳到 80% 后文本总长不变",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "切滚动模式后不再报总页数",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "切回分页后总页数与跳转前一致",
+        "pass": false,
+        "detail": "6432 vs 6651"
+      },
+      {
+        "name": "切回分页后正文块数不变（窗口+冷区）",
+        "pass": false,
+        "detail": "88911 vs 88908"
+      },
+      {
+        "name": "切回分页后文本总长不变",
+        "pass": true,
+        "detail": "4652894 vs 4652894"
+      },
+      {
+        "name": "锚点不重复（每个锚点恰好一个）",
+        "pass": true,
+        "detail": "440 vs 440"
+      },
+      {
+        "name": "正文段落数 = 首屏 + 追加（一页不丢）",
+        "pass": true,
+        "detail": "88000 vs 88000"
+      },
+      {
+        "name": "正文段落数 = 期望值",
+        "pass": true,
+        "detail": "88000 vs 88000"
+      },
+      {
+        "name": "追加后页数增长（> 首屏）",
+        "pass": true,
+        "detail": "6651 vs 2105"
+      },
+      {
+        "name": "marker 恒为最后一个子元素",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "末页可达（进度 ≥ 90%）",
+        "pass": true,
+        "detail": "10000"
+      }
+    ],
+    "pagesBeforeJump": 6651,
+    "blocksBefore": 88908,
+    "textLenBefore": 4652894,
+    "chaptersRegistered": 441,
+    "allPass": false
+  },
+  "fontProbe": {
+    "cfg": {
+      "paras": 2000
+    },
+    "fontsReadyAfterMs": 42,
+    "fontsStatus": "loaded",
+    "fontsSizeAfterWait": 1,
+    "layoutAfterWaitMs": 0,
+    "fontsReadyLateMs": 42,
+    "paragraphs": 2000
+  },
+  "pageTurns": {
+    "cfg": {
+      "initialParas": 400,
+      "chapters": 80,
+      "chunkParas": 350,
+      "turns": 100
+    },
+    "pagesInitial": 29,
+    "buildMs": 901,
+    "pages": 2136,
+    "totalPagesInfo": {
+      "pages": 2136,
+      "estimated": true,
+      "chapters": 143,
+      "measuredChapters": 2,
+      "estimatedChapters": 141,
+      "estimatedFraction": 0.9863849765258216,
+      "charsPerPage": 699.72,
+      "windowFrom": 0,
+      "windowTo": 1
+    },
+    "next": {
+      "dir": "next",
+      "times": 100,
+      "syncMs": 34,
+      "totalMs": 50,
+      "maxCallMs": 11.6,
+      "changedTurns": 99,
+      "monotonic": true,
+      "firstLocation": 7,
+      "lastLocation": 494,
+      "longTasks": {
+        "count": 0,
+        "totalMs": 0,
+        "maxMs": 0,
+        "worst": []
+      }
+    },
+    "prev": {
+      "dir": "prev",
+      "times": 100,
+      "syncMs": 26,
+      "totalMs": 33,
+      "maxCallMs": 7.9,
+      "changedTurns": 99,
+      "monotonic": true,
+      "firstLocation": 489,
+      "lastLocation": 22,
+      "longTasks": {
+        "count": 0,
+        "totalMs": 0,
+        "maxMs": 0,
+        "worst": []
+      }
+    },
+    "pagesAfter": 2053,
+    "blocksAfter": 407
+  },
+  "estimateDeviation": {
+    "cfg": {
+      "initialParas": 28000,
+      "chapters": 25,
+      "chunkParas": 1120
+    },
+    "windowed": {
+      "windowed": true,
+      "syncMs": 6,
+      "untilFrameMs": 450,
+      "pages": 4955,
+      "pagesInfo": {
+        "pages": 4955,
+        "estimated": true,
+        "chapters": 281,
+        "measuredChapters": 2,
+        "estimatedChapters": 279,
+        "estimatedFraction": 0.9931877379282709,
+        "charsPerPage": 596.82,
+        "windowFrom": 0,
+        "windowTo": 1
+      },
+      "estimationSupported": true,
+      "longTasks": {
+        "count": 0,
+        "totalMs": 0,
+        "maxMs": 0,
+        "worst": []
+      }
+    },
+    "full": {
+      "windowed": false,
+      "syncMs": 1,
+      "untilFrameMs": 6423,
+      "pages": 4667,
+      "pagesInfo": {
+        "pages": 4667,
+        "estimated": false,
+        "chapters": 1,
+        "measuredChapters": 1,
+        "estimatedChapters": 0,
+        "estimatedFraction": 0,
+        "charsPerPage": 0,
+        "windowFrom": 0,
+        "windowTo": 0
+      },
+      "estimationSupported": true,
+      "longTasks": {
+        "count": 2,
+        "totalMs": 11940,
+        "maxMs": 5970,
+        "worst": [
+          {
+            "start": 20740,
+            "dur": 5970
+          },
+          {
+            "start": 20740,
+            "dur": 5970
+          }
+        ]
+      }
+    },
+    "deviationPages": 288,
+    "deviationPercent": 6.17,
+    "speedupUntilFrame": 14.27
+  }
+}

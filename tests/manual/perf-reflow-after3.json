@@ -1,0 +1,88 @@
+{
+  "meta": {
+    "label": "after3",
+    "generatedAt": "2026-10-09T10:48:36.070Z",
+    "engineEntry": "src/services/books/formats/mobi/HtmlDocEngine.ts",
+    "viewport": "1200x800 (--headless=new)",
+    "method": "真实 Edge + 真实 HtmlDocEngine（esbuild IIFE）；performance.now() 夹住被测调用；longtask = PerformanceObserver 浏览器自量 >50ms 长任务",
+    "params": {
+      "paras": 20000,
+      "batches": 50,
+      "appendFraction": 0.02
+    }
+  },
+  "main": null,
+  "fontAtSize": {
+    "cfg": {
+      "paras": 28000,
+      "batches": 50,
+      "chunkParas": 1120
+    },
+    "steps": [
+      {
+        "fontSize": 19,
+        "syncMs": 1,
+        "untilFrameMs": 29584,
+        "pages": 7000,
+        "longTasks": {
+          "count": 2,
+          "totalMs": 29586,
+          "maxMs": 14929,
+          "worst": [
+            {
+              "start": 37269,
+              "dur": 14929
+            },
+            {
+              "start": 22611,
+              "dur": 14657
+            }
+          ]
+        }
+      },
+      {
+        "fontSize": 20,
+        "syncMs": 0,
+        "untilFrameMs": 15068,
+        "pages": 7001,
+        "longTasks": {
+          "count": 1,
+          "totalMs": 15060,
+          "maxMs": 15060,
+          "worst": [
+            {
+              "start": 52736,
+              "dur": 15060
+            }
+          ]
+        }
+      },
+      {
+        "fontSize": 18,
+        "syncMs": 1166,
+        "untilFrameMs": 13733,
+        "pages": 6462,
+        "longTasks": {
+          "count": 1,
+          "totalMs": 13727,
+          "maxMs": 13727,
+          "worst": [
+            {
+              "start": 68217,
+              "dur": 13727
+            }
+          ]
+        }
+      }
+    ],
+    "pagesAtMount": 2001,
+    "pagesBeforeChange": 6001,
+    "blocksBefore": 84471,
+    "pagesAfter": 6462
+  },
+  "rawBreakdown": null,
+  "gridProbe": null,
+  "lazyJump": null,
+  "integrityRegression": null,
+  "fontProbe": null
+}

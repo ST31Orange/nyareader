@@ -1,0 +1,93 @@
+{
+  "meta": {
+    "label": "after-integrity",
+    "generatedAt": "2026-10-09T10:50:03.919Z",
+    "engineEntry": "src/services/books/formats/mobi/HtmlDocEngine.ts",
+    "viewport": "1200x800 (--headless=new)",
+    "method": "真实 Edge + 真实 HtmlDocEngine（esbuild IIFE）；performance.now() 夹住被测调用；longtask = PerformanceObserver 浏览器自量 >50ms 长任务",
+    "params": {
+      "paras": 20000,
+      "batches": 50,
+      "appendFraction": 0.02
+    }
+  },
+  "main": null,
+  "fontAtSize": null,
+  "rawBreakdown": null,
+  "gridProbe": null,
+  "lazyJump": null,
+  "integrityRegression": {
+    "cfg": {
+      "paras": 28000,
+      "batches": 25,
+      "chunkParas": 2400
+    },
+    "checks": [
+      {
+        "name": "跳到 80% 后总页数不变",
+        "pass": true,
+        "detail": "6286 vs 6286"
+      },
+      {
+        "name": "跳到 80% 后正文块数不变",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "跳到 80% 后文本总长不变",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "切滚动模式后不再报总页数",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "切回分页后总页数与跳转前一致",
+        "pass": true,
+        "detail": "6286 vs 6286"
+      },
+      {
+        "name": "切回分页后正文块数不变",
+        "pass": true,
+        "detail": "88466 vs 88466"
+      },
+      {
+        "name": "切回分页后文本总长不变",
+        "pass": true,
+        "detail": "4652894 vs 4652894"
+      },
+      {
+        "name": "锚点不重复（每个锚点恰好一个）",
+        "pass": true,
+        "detail": "440 vs 440"
+      },
+      {
+        "name": "正文段落数 = 首屏 + 追加（一页不丢）",
+        "pass": true,
+        "detail": "88000 vs 88000"
+      },
+      {
+        "name": "追加后页数增长（> 首屏）",
+        "pass": true,
+        "detail": "6286 vs 2001"
+      },
+      {
+        "name": "marker 恒为最后一个子元素",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "末页可达（进度 ≥ 90%）",
+        "pass": true,
+        "detail": "9998"
+      }
+    ],
+    "pagesBeforeJump": 6286,
+    "blocksBefore": 88466,
+    "textLenBefore": 4652894,
+    "allPass": true
+  },
+  "fontProbe": null
+}

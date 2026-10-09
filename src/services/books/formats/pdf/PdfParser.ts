@@ -6,6 +6,7 @@
 import type { BookModel, TocItem } from "../../../../types";
 import type { IBookParser, ParseContext } from "../../Parser";
 import { pdfjs } from "./pdfWorker";
+import { putPdfHandoff } from "./pdfHandoff";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 
 interface PdfOutlineNode {
@@ -29,21 +30,29 @@ export class PdfParser implements IBookParser {
 			const outline = await doc.getOutline();
 			const numPages = doc.numPages;
 			const info = meta.info as { Title?: string; Author?: string };
+			// 目录解析必须在交接之前完成：交接意味着所有权转给渲染引擎，
+			// 之后本方法不再保证文档仍然存活。
+			const toc = await buildToc(outline, doc);
+			// 解析成果交接给渲染引擎（PdfEngine.mount），避免对同一 buffer 再解析一次。
+			// 交接后所有权转移：本方法不再 destroy，由引擎在销毁时释放。
+			putPdfHandoff(ctx.buffer, doc);
 			return {
 				fingerprint: ctx.fingerprint,
 				path: ctx.path,
 				format: "pdf",
 				title: info.Title?.trim() || ctx.path.split("/").pop()?.replace(/\.pdf$/i, "") || "未命名 PDF",
 				author: info.Author?.trim() || undefined,
-				toc: await buildToc(outline, doc),
+				toc,
 				spine: Array.from({ length: numPages }, (_, i) => ({
 					id: `p${i + 1}`,
 					href: String(i + 1),
 					title: `第 ${i + 1} 页`,
 				})),
 			};
-		} finally {
-			await doc.destroy();
+		} catch (e) {
+			// 解析失败：释放文档，避免半成品常驻 worker
+			void doc.destroy().catch(() => undefined);
+			throw e;
 		}
 	}
 }

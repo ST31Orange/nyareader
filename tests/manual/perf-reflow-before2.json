@@ -1,0 +1,213 @@
+{
+  "meta": {
+    "label": "before2",
+    "generatedAt": "2026-10-09T10:39:04.152Z",
+    "engineEntry": "src/services/books/formats/mobi/HtmlDocEngine.ts",
+    "viewport": "1200x800 (--headless=new)",
+    "method": "真实 Edge + 真实 HtmlDocEngine（esbuild IIFE）；performance.now() 夹住被测调用；longtask = PerformanceObserver 浏览器自量 >50ms 长任务",
+    "params": {
+      "paras": 28000,
+      "batches": 50,
+      "appendFraction": 0.02
+    }
+  },
+  "main": {
+    "cfg": {
+      "paras": 28000,
+      "batches": 50,
+      "appendFraction": 0.02
+    },
+    "longTaskSupported": true,
+    "mountMs": 3977,
+    "pages": 2001,
+    "pageW": 1090,
+    "stride": 1130,
+    "fontChange": {
+      "to20Ms": 373,
+      "to20UntilFrameMs": 1840,
+      "pagesAt20": 2334,
+      "back18Ms": 259,
+      "back18UntilFrameMs": 1481,
+      "pagesBack18": 2001,
+      "nudgeZoomSyncMs": 332,
+      "nudgeZoomUntilFrameMs": 1671
+    },
+    "append": {
+      "batches": 50,
+      "batchParas": 560,
+      "syncTotalMs": 4624,
+      "syncMaxMs": 175.8,
+      "syncAvgMs": 92.5,
+      "settleMs": 5271,
+      "totalMs": 9895,
+      "pagesBefore": 2001,
+      "pagesAfter": 4308,
+      "longTasks": {
+        "count": 2,
+        "totalMs": 19750,
+        "maxMs": 9875,
+        "worst": [
+          {
+            "start": 12829,
+            "dur": 9875
+          },
+          {
+            "start": 12829,
+            "dur": 9875
+          }
+        ]
+      }
+    },
+    "appendSpread": {
+      "batches": 50,
+      "loopWallMs": 462775,
+      "syncTotalMs": 7561,
+      "syncMaxMs": 266.2,
+      "totalMs": 463186,
+      "pagesAfter": 6462,
+      "longTasks": {
+        "count": 100,
+        "totalMs": 25676,
+        "maxMs": 5409,
+        "worst": [
+          {
+            "start": 22724,
+            "dur": 5409
+          },
+          {
+            "start": 22724,
+            "dur": 5409
+          },
+          {
+            "start": 386774,
+            "dur": 266
+          },
+          {
+            "start": 386774,
+            "dur": 266
+          },
+          {
+            "start": 296380,
+            "dur": 229
+          }
+        ]
+      }
+    },
+    "zoomBurst": {
+      "calls": 10,
+      "syncMs": 10063,
+      "untilFrameMs": 27246,
+      "totalMs": 27652,
+      "longTasks": {
+        "count": 2,
+        "totalMs": 53940,
+        "maxMs": 26970,
+        "worst": [
+          {
+            "start": 485910,
+            "dur": 26970
+          },
+          {
+            "start": 485910,
+            "dur": 26970
+          }
+        ]
+      }
+    },
+    "jump": {
+      "anchorId": "nyar-anchor-55800",
+      "anchorExists": true,
+      "syncMs": 1,
+      "totalMs": 32,
+      "longTasks": {
+        "count": 0,
+        "totalMs": 0,
+        "maxMs": 0,
+        "worst": []
+      },
+      "reachedLocation": "6643",
+      "visibleColumn": null
+    },
+    "integrity": {
+      "markerIsLastChild": true,
+      "markerOffsetLeft": 7300930,
+      "pagesMatchesMarker": true,
+      "totalPagesGrew": true,
+      "doubleActive": false,
+      "errors": []
+    }
+  },
+  "rawBreakdown": {
+    "cfg": {
+      "paras": 28000,
+      "batches": 50
+    },
+    "pages0": 2154,
+    "insertOnlyMs": 14,
+    "singleFullLayoutMs": 298,
+    "pagesAfterInsert": 4308
+  },
+  "gridProbe": null,
+  "lazyJump": {
+    "cfg": {
+      "initialParas": 400,
+      "batches": 25,
+      "chunkParas": 800
+    },
+    "pagesInitial": 31,
+    "preload": {
+      "batches": 25,
+      "chunkParas": 800,
+      "wallMs": 5736,
+      "syncMaxMs": 135.4,
+      "pagesAfterAppend": 1570
+    },
+    "jump": {
+      "anchorId": "nyar-anchor-20200",
+      "anchorExists": true,
+      "callMs": 0,
+      "pagesAfter": 1570,
+      "location": "9895",
+      "visibleColumn": null
+    },
+    "actionTotalMs": 5753,
+    "longTasks": {
+      "count": 4,
+      "totalMs": 410,
+      "maxMs": 135,
+      "worst": [
+        {
+          "start": 538335,
+          "dur": 135
+        },
+        {
+          "start": 538335,
+          "dur": 135
+        },
+        {
+          "start": 535572,
+          "dur": 70
+        },
+        {
+          "start": 535572,
+          "dur": 70
+        }
+      ]
+    },
+    "blocksBefore": 403,
+    "blocksAfter": 20528,
+    "layoutStates": []
+  },
+  "integrityRegression": null,
+  "fontProbe": {
+    "cfg": {
+      "paras": 2000
+    },
+    "fontsReadyAfterMs": 43,
+    "fontsStatus": "loaded",
+    "fontsSizeAfterWait": 1,
+    "layoutAfterWaitMs": 0,
+    "fontsReadyLateMs": 43,
+    "paragraphs": 2000
+  }
+}

@@ -71,6 +71,21 @@ export interface ReaderSettings {
 
 export type ReaderTheme = "light" | "dark" | "sepia";
 
+/**
+ * 重排（重新排版）状态。
+ *
+ * 大文件（几千页）调整字号/版式时，浏览器必须同步重排整篇已加载文档，
+ * 这一步无法避免，但可以**让用户知道不是卡死**：重排开始前先发 `busy:true`
+ * （视图把它画到屏幕上），结束后发 `busy:false` 并带上真实耗时。
+ */
+export interface RelayoutState {
+	busy: boolean;
+	/** 触发原因：首次挂载/设置/缩放/追加内容/窗口尺寸 */
+	reason: "mount" | "settings" | "zoom" | "append" | "resize";
+	/** 上一次重排的真实耗时（ms），busy:false 时提供 */
+	elapsedMs?: number;
+}
+
 export const DEFAULT_READER_SETTINGS: ReaderSettings = {
 	fontFamily: "system-ui",
 	fontSize: 18,
@@ -79,5 +94,7 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
 	theme: "light",
 	layout: "single",
 	scrollMode: false,
-	pageWidth: 420,
+	// 正文栏宽上限（px）：420 在 900px 以上窗口一行只有约 27 个汉字，偏窄；
+	// 640 约 40 汉字/行，接近业界 45–75 字符的舒适阅读区间。
+	pageWidth: 640,
 };

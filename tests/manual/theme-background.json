@@ -1,0 +1,68 @@
+{
+  "hostVar": "rgb(13, 37, 61)",
+  "rows": [
+    {
+      "label": "滚动+默认主题",
+      "theme": "light",
+      "scrollMode": true,
+      "htmlBg": "rgb(13, 37, 61)",
+      "bodyBg": "rgba(0, 0, 0, 0)",
+      "bodyColor": "rgb(240, 244, 250)",
+      "bookBg": null
+    },
+    {
+      "label": "分页+默认主题",
+      "theme": "light",
+      "scrollMode": false,
+      "htmlBg": "rgb(242, 242, 242)",
+      "bodyBg": "rgba(0, 0, 0, 0)",
+      "bodyColor": "rgb(0, 0, 0)",
+      "bookBg": "rgb(255, 255, 255)"
+    },
+    {
+      "label": "滚动+dark",
+      "theme": "dark",
+      "scrollMode": true,
+      "htmlBg": "rgb(20, 20, 22)",
+      "bodyBg": "rgba(0, 0, 0, 0)",
+      "bodyColor": "rgb(0, 0, 0)",
+      "bookBg": null
+    },
+    {
+      "label": "滚动+sepia",
+      "theme": "sepia",
+      "scrollMode": true,
+      "htmlBg": "rgb(233, 224, 205)",
+      "bodyBg": "rgba(0, 0, 0, 0)",
+      "bodyColor": "rgb(0, 0, 0)",
+      "bookBg": null
+    }
+  ],
+  "checks": [
+    {
+      "name": "滚动+默认主题：背景 == 宿主 --background-primary（不再是 #f2f2f2）",
+      "pass": true
+    },
+    {
+      "name": "滚动+默认主题：正文颜色跟随宿主（不再是写死的 #1f1f1f）",
+      "pass": true
+    },
+    {
+      "name": "分页+默认主题：书页本体仍是白（呈现书页的是 .nyareader-book）",
+      "pass": true
+    },
+    {
+      "name": "分页+默认主题：书页不跟随宿主深色（保持纸的观感）",
+      "pass": true
+    },
+    {
+      "name": "滚动+dark：保留暗色主题背景",
+      "pass": true
+    },
+    {
+      "name": "滚动+sepia：保留羊皮纸主题背景",
+      "pass": true
+    }
+  ],
+  "pass": true
+}

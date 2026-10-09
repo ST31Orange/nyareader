@@ -1,0 +1,193 @@
+{
+  "checks": [
+    {
+      "name": "mount 未抛异常",
+      "pass": true
+    },
+    {
+      "name": "按章分页生效（存在 .nyareader-columns 与 .nyareader-cold）",
+      "pass": true
+    },
+    {
+      "name": "冷区确实是 display:none",
+      "pass": true
+    },
+    {
+      "name": "三章被正确识别（chapters === 3）",
+      "pass": true
+    },
+    {
+      "name": "远端章节高亮在跳过去之前不渲染（设计降级）",
+      "pass": true
+    },
+    {
+      "name": "远端章节在跳转前不在活动窗口",
+      "pass": true
+    },
+    {
+      "name": "goTo('#锚点') 激活了目标章（第 3 章进入活动窗口）",
+      "pass": true
+    },
+    {
+      "name": "激活后高亮自动恢复",
+      "pass": true
+    },
+    {
+      "name": "锚点解析诊断：解析到第 2 章并激活窗口",
+      "pass": true
+    },
+    {
+      "name": "跳回后第 3 章回到冷区（高亮随之不渲染）",
+      "pass": true
+    },
+    {
+      "name": "再次跳回仍能恢复（可反复）",
+      "pass": true
+    },
+    {
+      "name": "全程无未捕获异常",
+      "pass": true
+    }
+  ],
+  "pass": true,
+  "numbers": {
+    "mountErrors": [],
+    "infoAtMount": {
+      "pages": 8,
+      "estimated": true,
+      "chapters": 3,
+      "measuredChapters": 2,
+      "estimatedChapters": 1,
+      "estimatedFraction": 0.375,
+      "charsPerPage": 423.6,
+      "windowFrom": 0,
+      "windowTo": 1
+    },
+    "beforeJump": {
+      "api": 0,
+      "spans": 0,
+      "total": 0,
+      "farInWindow": false
+    },
+    "afterFlush": {
+      "api": 0,
+      "spans": 0,
+      "total": 0,
+      "farInWindow": false,
+      "info": {
+        "pages": 8,
+        "estimated": true,
+        "chapters": 3,
+        "measuredChapters": 2,
+        "estimatedChapters": 1,
+        "estimatedFraction": 0.375,
+        "charsPerPage": 423.6,
+        "windowFrom": 0,
+        "windowTo": 1
+      }
+    },
+    "afterJump": {
+      "api": 1,
+      "spans": 0,
+      "total": 1,
+      "farInWindow": true,
+      "info": {
+        "pages": 8,
+        "estimated": false,
+        "chapters": 3,
+        "measuredChapters": 3,
+        "estimatedChapters": 0,
+        "estimatedFraction": 0,
+        "charsPerPage": 397.13,
+        "windowFrom": 1,
+        "windowTo": 2
+      },
+      "diag": {
+        "lastRelayoutMs": 1,
+        "pagesAddedLastMeasure": 0,
+        "stagedPending": false,
+        "pages": 8,
+        "lastAnchorResolve": {
+          "anchorId": "nyareader-epub-2",
+          "chapter": 2,
+          "from": 0,
+          "to": 1,
+          "chapters": 3,
+          "after": {
+            "from": 1,
+            "to": 2,
+            "active": 0
+          }
+        },
+        "windowTrace": [
+          {
+            "from": 0,
+            "to": 1,
+            "active": 0,
+            "stack": "    at HtmlDocEngine.applyWindow (file:///C:/WINDOWS/Temp/nyar-cold-WvBul8/cold-engine.js:1679:101) |     at HtmlDocEngine.populatePagedContainer (file:///C:/WINDOWS/Temp/nyar-cold-WvBul8/cold-engine.js:2149:14) |     at HtmlDocEngine.wrapPaged (file:///C:/WINDOWS/Temp/nyar-cold-WvBul8/cold-engine.js:2205:12)"
+          },
+          {
+            "from": 0,
+            "to": 1,
+            "active": 0,
+            "stack": "    at HtmlDocEngine.applyWindow (file:///C:/WINDOWS/Temp/nyar-cold-WvBul8/cold-engine.js:1679:101) |     at HtmlDocEngine.populatePagedContainer (file:///C:/WINDOWS/Temp/nyar-cold-WvBul8/cold-engine.js:2149:14) |     at HtmlDocEngine.wrapPaged (file:///C:/WINDOWS/Temp/nyar-cold-WvBul8/cold-engine.js:2164:14)"
+          },
+          {
+            "from": 1,
+            "to": 2,
+            "active": 2,
+            "stack": "    at HtmlDocEngine.applyWindow (file:///C:/WINDOWS/Temp/nyar-cold-WvBul8/cold-engine.js:1679:101) |     at HtmlDocEngine.ensureWindow (file:///C:/WINDOWS/Temp/nyar-cold-WvBul8/cold-engine.js:1699:12) |     at HtmlDocEngine.goTo (file:///C:/WINDOWS/Temp/nyar-cold-WvBul8/cold-engine.js:1858:18)"
+          }
+        ]
+      },
+      "placements": [
+        {
+          "id": "h-far",
+          "quality": "quote-unique",
+          "approximate": false,
+          "reason": "结构定位失效，文本指纹唯一命中",
+          "rendered": true
+        }
+      ],
+      "location": "10000"
+    },
+    "afterBack": {
+      "api": 0,
+      "spans": 0,
+      "total": 0,
+      "farInWindow": false,
+      "info": {
+        "pages": 7,
+        "estimated": false,
+        "chapters": 3,
+        "measuredChapters": 3,
+        "estimatedChapters": 0,
+        "estimatedFraction": 0,
+        "charsPerPage": 453.86,
+        "windowFrom": 0,
+        "windowTo": 1
+      }
+    },
+    "afterReJump": {
+      "api": 1,
+      "spans": 0,
+      "total": 1,
+      "farInWindow": true,
+      "info": {
+        "pages": 8,
+        "estimated": false,
+        "chapters": 3,
+        "measuredChapters": 3,
+        "estimatedChapters": 0,
+        "estimatedFraction": 0,
+        "charsPerPage": 397.13,
+        "windowFrom": 1,
+        "windowTo": 2
+      }
+    },
+    "hasColumnsEl": true,
+    "hasColdEl": true,
+    "coldDisplay": "none",
+    "errors": []
+  }
+}

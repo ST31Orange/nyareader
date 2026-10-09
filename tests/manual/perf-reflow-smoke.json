@@ -1,0 +1,93 @@
+{
+  "meta": {
+    "label": "smoke",
+    "generatedAt": "2026-10-09T10:14:52.192Z",
+    "engineEntry": "src/services/books/formats/mobi/HtmlDocEngine.ts",
+    "viewport": "1200x800 (--headless=new)",
+    "method": "真实 Edge + 真实 HtmlDocEngine（esbuild IIFE）；performance.now() 夹住被测调用；longtask = PerformanceObserver 浏览器自量 >50ms 长任务",
+    "params": {
+      "paras": 5000,
+      "batches": 50,
+      "appendFraction": 0.02
+    }
+  },
+  "main": {
+    "cfg": {
+      "paras": 5000,
+      "batches": 50,
+      "appendFraction": 0.02
+    },
+    "longTaskSupported": true,
+    "mountMs": 357,
+    "pages": 358,
+    "pageW": 1090,
+    "stride": 1130,
+    "fontChange": {
+      "to20Ms": 84,
+      "to20UntilFrameMs": 138,
+      "pagesAt20": 417,
+      "back18Ms": 54,
+      "back18UntilFrameMs": 99,
+      "pagesBack18": 358,
+      "nudgeZoomMs": 61
+    },
+    "append": {
+      "batches": 50,
+      "batchParas": 100,
+      "syncTotalMs": 1070,
+      "syncMaxMs": 41.5,
+      "syncAvgMs": 21.4,
+      "settleMs": 148,
+      "totalMs": 1218,
+      "pagesBefore": 358,
+      "pagesAfter": 715,
+      "longTasks": {
+        "count": 2,
+        "totalMs": 2404,
+        "maxMs": 1202,
+        "worst": [
+          {
+            "start": 1195,
+            "dur": 1202
+          },
+          {
+            "start": 1195,
+            "dur": 1202
+          }
+        ]
+      }
+    },
+    "jump": {
+      "anchorId": "nyar-anchor-9800",
+      "anchorExists": true,
+      "syncMs": 0,
+      "totalMs": 33,
+      "longTasks": {
+        "count": 0,
+        "totalMs": 0,
+        "maxMs": 0,
+        "worst": []
+      },
+      "reachedLocation": "9797",
+      "visibleColumn": 700
+    },
+    "integrity": {
+      "markerIsLastChild": true,
+      "markerOffsetLeft": 806820,
+      "pagesMatchesMarker": true,
+      "totalPagesGrew": true,
+      "doubleActive": false,
+      "errors": []
+    }
+  },
+  "rawBreakdown": {
+    "cfg": {
+      "paras": 5000,
+      "batches": 50
+    },
+    "pages0": 358,
+    "insertOnlyMs": 4,
+    "singleFullLayoutMs": 101,
+    "pagesAfterInsert": 715
+  }
+}

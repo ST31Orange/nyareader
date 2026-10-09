@@ -1,0 +1,5 @@
+# 手动/一次性验证脚本的生成物
+.engine-bundle.js
+*.bundle.js
+# 各 harness 用 esbuild 打的临时包（含高亮批注验证的三个）
+*-bundle.js

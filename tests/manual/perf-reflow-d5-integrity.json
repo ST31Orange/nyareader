@@ -1,0 +1,96 @@
+{
+  "meta": {
+    "label": "d5-integrity",
+    "generatedAt": "2026-10-09T11:12:49.518Z",
+    "engineEntry": "src/services/books/formats/mobi/HtmlDocEngine.ts",
+    "viewport": "1200x800 (--headless=new)",
+    "method": "真实 Edge + 真实 HtmlDocEngine（esbuild IIFE）；performance.now() 夹住被测调用；longtask = PerformanceObserver 浏览器自量 >50ms 长任务",
+    "params": {
+      "paras": 20000,
+      "batches": 50,
+      "appendFraction": 0.02
+    }
+  },
+  "main": null,
+  "fontAtSize": null,
+  "rawBreakdown": null,
+  "gridProbe": null,
+  "lazyJump": null,
+  "integrityRegression": {
+    "cfg": {
+      "paras": 28000,
+      "batches": 25,
+      "chunkParas": 2400
+    },
+    "checks": [
+      {
+        "name": "跳到 80% 后总页数偏差 ≤ 8%（估计值会因激活章节而微调）",
+        "pass": true,
+        "detail": "6432 vs 6651"
+      },
+      {
+        "name": "跳到 80% 后当前位置 ≈ 80%（±5%）",
+        "pass": true,
+        "detail": "0.800"
+      },
+      {
+        "name": "跳到 80% 后文本总长不变",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "切滚动模式后不再报总页数",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "切回分页后总页数偏差 ≤ 8%",
+        "pass": true,
+        "detail": "6432 vs 6651"
+      },
+      {
+        "name": "切回分页后文本总长不变",
+        "pass": true,
+        "detail": "4652894 vs 4652894"
+      },
+      {
+        "name": "锚点不重复（每个锚点恰好一个）",
+        "pass": true,
+        "detail": "440 vs 440"
+      },
+      {
+        "name": "正文段落数 = 首屏 + 追加（一页不丢）",
+        "pass": true,
+        "detail": "88000 vs 88000"
+      },
+      {
+        "name": "正文段落数 = 期望值",
+        "pass": true,
+        "detail": "88000 vs 88000"
+      },
+      {
+        "name": "追加后页数增长（> 首屏）",
+        "pass": true,
+        "detail": "6651 vs 2105"
+      },
+      {
+        "name": "marker 恒为最后一个子元素",
+        "pass": true,
+        "detail": null
+      },
+      {
+        "name": "末页可达（进度 ≥ 90%）",
+        "pass": true,
+        "detail": "10000"
+      }
+    ],
+    "pagesBeforeJump": 6651,
+    "blocksBefore": 88908,
+    "textLenBefore": 4652894,
+    "chaptersRegistered": 441,
+    "allPass": true
+  },
+  "fontProbe": null,
+  "pageTurns": null,
+  "estimateDeviation": null
+}

@@ -10,8 +10,8 @@
  */
 import type { BookModel, TocItem } from "../../../../types";
 import type { IBookParser, ParseContext } from "../../Parser";
-import { openEpubZip, EPUB_ANCHOR_PREFIX } from "./EpubZipCache";
-import { findOpfPath } from "./EpubDocument";
+import { EPUB_ANCHOR_PREFIX } from "./EpubZipCache";
+import { loadEpubStructure } from "./EpubDocument";
 
 interface EpubNavItem {
 	label: string;
@@ -19,7 +19,7 @@ interface EpubNavItem {
 	subitems?: EpubNavItem[];
 }
 
-interface OpfData {
+export interface OpfData {
 	title?: string;
 	author?: string;
 	spine: Array<{ id: string; href: string }>;
@@ -31,13 +31,9 @@ export class EpubParser implements IBookParser {
 	readonly format = "epub" as const;
 
 	async parse(ctx: ParseContext): Promise<BookModel> {
-		const zip = await openEpubZip(ctx.buffer);
-		const opfPath = await findOpfPath(zip);
-		const opfFile = zip.file(opfPath);
-		if (!opfFile) throw new Error("EPUB 缺少 content.opf");
-		const opf = await opfFile.async("string");
-		const data = parseOpf(opf);
-		const opfDir = dirOf(opfPath);
+		// 结构（container.xml + content.opf）与渲染层共用一次解包/解析结果：
+		// 打开大书时不再"解析器解一次、渲染文档再解一次"。
+		const { zip, opf: data, opfDir } = await loadEpubStructure(ctx.buffer);
 
 		let toc: EpubNavItem[] = [];
 		if (data.ncxHref) {

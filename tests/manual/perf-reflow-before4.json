@@ -1,0 +1,122 @@
+{
+  "meta": {
+    "label": "before4",
+    "generatedAt": "2026-10-09T11:01:25.261Z",
+    "engineEntry": "src/services/books/formats/mobi/HtmlDocEngine.ts",
+    "viewport": "1200x800 (--headless=new)",
+    "method": "真实 Edge + 真实 HtmlDocEngine（esbuild IIFE）；performance.now() 夹住被测调用；longtask = PerformanceObserver 浏览器自量 >50ms 长任务",
+    "params": {
+      "paras": 20000,
+      "batches": 50,
+      "appendFraction": 0.02
+    }
+  },
+  "main": null,
+  "fontAtSize": null,
+  "rawBreakdown": null,
+  "gridProbe": null,
+  "lazyJump": null,
+  "integrityRegression": null,
+  "fontProbe": null,
+  "pageTurns": {
+    "cfg": {
+      "initialParas": 400,
+      "chapters": 80,
+      "chunkParas": 350,
+      "turns": 100
+    },
+    "pagesInitial": 29,
+    "buildMs": 32627,
+    "pages": 2029,
+    "totalPagesInfo": null,
+    "next": {
+      "dir": "next",
+      "times": 100,
+      "syncMs": 0,
+      "totalMs": 1337,
+      "maxCallMs": 0.1,
+      "changedTurns": 99,
+      "monotonic": true,
+      "firstLocation": 7,
+      "lastLocation": 495,
+      "longTasks": {
+        "count": 1,
+        "totalMs": 1328,
+        "maxMs": 1328,
+        "worst": [
+          {
+            "start": 33181,
+            "dur": 1328
+          }
+        ]
+      }
+    },
+    "prev": {
+      "dir": "prev",
+      "times": 100,
+      "syncMs": 0,
+      "totalMs": 33,
+      "maxCallMs": 0.1,
+      "changedTurns": 99,
+      "monotonic": true,
+      "firstLocation": 487,
+      "lastLocation": 34,
+      "longTasks": {
+        "count": 0,
+        "totalMs": 0,
+        "maxMs": 0,
+        "worst": []
+      }
+    },
+    "pagesAfter": 2185,
+    "blocksAfter": 28623
+  },
+  "estimateDeviation": {
+    "cfg": {
+      "initialParas": 28000,
+      "chapters": 25,
+      "chunkParas": 1120
+    },
+    "windowed": {
+      "windowed": true,
+      "syncMs": 562,
+      "untilFrameMs": 6622,
+      "pages": 4667,
+      "pagesInfo": null,
+      "estimationSupported": false,
+      "longTasks": {
+        "count": 1,
+        "totalMs": 6198,
+        "maxMs": 6198,
+        "worst": [
+          {
+            "start": 116273,
+            "dur": 6198
+          }
+        ]
+      }
+    },
+    "full": {
+      "windowed": false,
+      "syncMs": 618,
+      "untilFrameMs": 7008,
+      "pages": 4667,
+      "pagesInfo": null,
+      "estimationSupported": false,
+      "longTasks": {
+        "count": 1,
+        "totalMs": 6575,
+        "maxMs": 6575,
+        "worst": [
+          {
+            "start": 214106,
+            "dur": 6575
+          }
+        ]
+      }
+    },
+    "deviationPages": 0,
+    "deviationPercent": 0,
+    "speedupUntilFrame": 1.06
+  }
+}

@@ -1,0 +1,190 @@
+{
+  "meta": {
+    "label": "d2",
+    "generatedAt": "2026-10-09T11:09:31.001Z",
+    "engineEntry": "src/services/books/formats/mobi/HtmlDocEngine.ts",
+    "viewport": "1200x800 (--headless=new)",
+    "method": "真实 Edge + 真实 HtmlDocEngine（esbuild IIFE）；performance.now() 夹住被测调用；longtask = PerformanceObserver 浏览器自量 >50ms 长任务",
+    "params": {
+      "paras": 20000,
+      "batches": 50,
+      "appendFraction": 0.02
+    }
+  },
+  "main": null,
+  "fontAtSize": {
+    "cfg": {
+      "paras": 28000,
+      "batches": 50,
+      "chunkParas": 1120
+    },
+    "steps": [
+      {
+        "fontSize": 19,
+        "syncMs": 10,
+        "untilFrameMs": 32,
+        "pages": 6720,
+        "longTasks": {
+          "count": 0,
+          "totalMs": 0,
+          "maxMs": 0,
+          "worst": []
+        }
+      },
+      {
+        "fontSize": 20,
+        "syncMs": 10,
+        "untilFrameMs": 33,
+        "pages": 7511,
+        "longTasks": {
+          "count": 0,
+          "totalMs": 0,
+          "maxMs": 0,
+          "worst": []
+        }
+      },
+      {
+        "fontSize": 18,
+        "syncMs": 9,
+        "untilFrameMs": 33,
+        "pages": 6300,
+        "longTasks": {
+          "count": 0,
+          "totalMs": 0,
+          "maxMs": 0,
+          "worst": []
+        }
+      }
+    ],
+    "pagesAtMount": 2099,
+    "pagesBeforeChange": 6300,
+    "blocksBefore": 407,
+    "pagesAfter": 6300
+  },
+  "rawBreakdown": null,
+  "gridProbe": null,
+  "lazyJump": null,
+  "integrityRegression": null,
+  "fontProbe": null,
+  "pageTurns": {
+    "cfg": {
+      "initialParas": 400,
+      "chapters": 80,
+      "chunkParas": 350,
+      "turns": 100
+    },
+    "pagesInitial": 29,
+    "buildMs": 917,
+    "pages": 2130,
+    "totalPagesInfo": {
+      "pages": 2130,
+      "estimated": true,
+      "chapters": 143,
+      "measuredChapters": 2,
+      "estimatedChapters": 141,
+      "estimatedFraction": 0.9863849765258216,
+      "charsPerPage": 699.72,
+      "windowFrom": 0,
+      "windowTo": 1
+    },
+    "next": {
+      "dir": "next",
+      "times": 100,
+      "syncMs": 28,
+      "totalMs": 33,
+      "maxCallMs": 7.8,
+      "changedTurns": 99,
+      "monotonic": true,
+      "firstLocation": 7,
+      "lastLocation": 491,
+      "longTasks": {
+        "count": 0,
+        "totalMs": 0,
+        "maxMs": 0,
+        "worst": []
+      }
+    },
+    "prev": {
+      "dir": "prev",
+      "times": 100,
+      "syncMs": 25,
+      "totalMs": 33,
+      "maxCallMs": 7.7,
+      "changedTurns": 99,
+      "monotonic": true,
+      "firstLocation": 486,
+      "lastLocation": 22,
+      "longTasks": {
+        "count": 0,
+        "totalMs": 0,
+        "maxMs": 0,
+        "worst": []
+      }
+    },
+    "pagesAfter": 2083,
+    "blocksAfter": 407
+  },
+  "estimateDeviation": {
+    "cfg": {
+      "initialParas": 28000,
+      "chapters": 25,
+      "chunkParas": 1120
+    },
+    "windowed": {
+      "windowed": true,
+      "syncMs": 7,
+      "untilFrameMs": 450,
+      "pages": 4991,
+      "pagesInfo": {
+        "pages": 4991,
+        "estimated": true,
+        "chapters": 281,
+        "measuredChapters": 2,
+        "estimatedChapters": 279,
+        "estimatedFraction": 0.9931877379282709,
+        "charsPerPage": 596.82,
+        "windowFrom": 0,
+        "windowTo": 1
+      },
+      "estimationSupported": true,
+      "longTasks": {
+        "count": 0,
+        "totalMs": 0,
+        "maxMs": 0,
+        "worst": []
+      }
+    },
+    "full": {
+      "windowed": false,
+      "syncMs": 1,
+      "untilFrameMs": 6923,
+      "pages": 4667,
+      "pagesInfo": {
+        "pages": 4667,
+        "estimated": false,
+        "chapters": 1,
+        "measuredChapters": 1,
+        "estimatedChapters": 0,
+        "estimatedFraction": 0,
+        "charsPerPage": 0,
+        "windowFrom": 0,
+        "windowTo": 0
+      },
+      "estimationSupported": true,
+      "longTasks": {
+        "count": 1,
+        "totalMs": 6499,
+        "maxMs": 6499,
+        "worst": [
+          {
+            "start": 21091,
+            "dur": 6499
+          }
+        ]
+      }
+    },
+    "deviationPages": 324,
+    "deviationPercent": 6.94,
+    "speedupUntilFrame": 15.38
+  }
+}

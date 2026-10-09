@@ -1,0 +1,202 @@
+{
+  "results": [
+    {
+      "view": {
+        "w": 360,
+        "h": 640
+      },
+      "reading": {
+        "bottom": 594,
+        "height": 594
+      },
+      "bar": {
+        "top": 594,
+        "bottom": 640,
+        "height": 46
+      },
+      "track": {
+        "left": 139,
+        "width": 209,
+        "height": 20
+      },
+      "info": {
+        "width": 113
+      },
+      "fillRatio": 0.5,
+      "thumbCenterRatio": 0.5,
+      "clickRatio": 0.5,
+      "overlap": 0,
+      "barAtBottom": true,
+      "noHorizontalOverflow": true,
+      "pointerEvents": "auto",
+      "touchAction": "none",
+      "cursor": "pointer",
+      "viewport": "360x640"
+    },
+    {
+      "view": {
+        "w": 900,
+        "h": 700
+      },
+      "reading": {
+        "bottom": 654,
+        "height": 654
+      },
+      "bar": {
+        "top": 654,
+        "bottom": 700,
+        "height": 46
+      },
+      "track": {
+        "left": 139,
+        "width": 749,
+        "height": 20
+      },
+      "info": {
+        "width": 113
+      },
+      "fillRatio": 0.5,
+      "thumbCenterRatio": 0.5,
+      "clickRatio": 0.5,
+      "overlap": 0,
+      "barAtBottom": true,
+      "noHorizontalOverflow": true,
+      "pointerEvents": "auto",
+      "touchAction": "none",
+      "cursor": "pointer",
+      "viewport": "900x700"
+    },
+    {
+      "view": {
+        "w": 2200,
+        "h": 1000
+      },
+      "reading": {
+        "bottom": 954,
+        "height": 954
+      },
+      "bar": {
+        "top": 954,
+        "bottom": 1000,
+        "height": 46
+      },
+      "track": {
+        "left": 139,
+        "width": 2049,
+        "height": 20
+      },
+      "info": {
+        "width": 113
+      },
+      "fillRatio": 0.5,
+      "thumbCenterRatio": 0.5,
+      "clickRatio": 0.5,
+      "overlap": 0,
+      "barAtBottom": true,
+      "noHorizontalOverflow": true,
+      "pointerEvents": "auto",
+      "touchAction": "none",
+      "cursor": "pointer",
+      "viewport": "2200x1000"
+    }
+  ],
+  "checks": [
+    {
+      "name": "360x640: 脚注贴底",
+      "pass": true
+    },
+    {
+      "name": "360x640: 不覆盖正文",
+      "pass": true
+    },
+    {
+      "name": "360x640: 进度条有宽度",
+      "pass": true
+    },
+    {
+      "name": "360x640: 填充=50%",
+      "pass": true
+    },
+    {
+      "name": "360x640: 滑块中心=50%",
+      "pass": true
+    },
+    {
+      "name": "360x640: 点击中点→0.5",
+      "pass": true
+    },
+    {
+      "name": "360x640: 可拖动(touch-action:none)",
+      "pass": true
+    },
+    {
+      "name": "360x640: 无横向溢出",
+      "pass": true
+    },
+    {
+      "name": "900x700: 脚注贴底",
+      "pass": true
+    },
+    {
+      "name": "900x700: 不覆盖正文",
+      "pass": true
+    },
+    {
+      "name": "900x700: 进度条有宽度",
+      "pass": true
+    },
+    {
+      "name": "900x700: 填充=50%",
+      "pass": true
+    },
+    {
+      "name": "900x700: 滑块中心=50%",
+      "pass": true
+    },
+    {
+      "name": "900x700: 点击中点→0.5",
+      "pass": true
+    },
+    {
+      "name": "900x700: 可拖动(touch-action:none)",
+      "pass": true
+    },
+    {
+      "name": "900x700: 无横向溢出",
+      "pass": true
+    },
+    {
+      "name": "2200x1000: 脚注贴底",
+      "pass": true
+    },
+    {
+      "name": "2200x1000: 不覆盖正文",
+      "pass": true
+    },
+    {
+      "name": "2200x1000: 进度条有宽度",
+      "pass": true
+    },
+    {
+      "name": "2200x1000: 填充=50%",
+      "pass": true
+    },
+    {
+      "name": "2200x1000: 滑块中心=50%",
+      "pass": true
+    },
+    {
+      "name": "2200x1000: 点击中点→0.5",
+      "pass": true
+    },
+    {
+      "name": "2200x1000: 可拖动(touch-action:none)",
+      "pass": true
+    },
+    {
+      "name": "2200x1000: 无横向溢出",
+      "pass": true
+    }
+  ],
+  "pass": true
+}

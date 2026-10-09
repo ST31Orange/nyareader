@@ -7,6 +7,260 @@
 	background: var(--background-primary);
 }
 
+/* ===== 批注面板（搜索 / 排序 / 色板 / 导出） ===== */
+.nyareader-annotations-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+	margin-bottom: 8px;
+}
+.nyareader-annotations-search {
+	flex: 1 1 120px;
+	min-width: 100px;
+	font-size: 12px;
+	padding: 3px 8px;
+	border-radius: 6px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-primary);
+	color: var(--text-normal);
+}
+.nyareader-annotations-sort {
+	font-size: 12px;
+	padding: 3px 6px;
+	border-radius: 6px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-primary);
+	color: var(--text-normal);
+}
+.nyareader-annotations-export {
+	font-size: 12px;
+	padding: 3px 10px;
+	border-radius: 6px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-primary);
+	color: var(--text-normal);
+	cursor: pointer;
+}
+.nyareader-annotations-export:hover {
+	background: var(--background-modifier-hover);
+}
+/* 行首颜色圆点：点击打开色板 */
+.nyareader-annotation-color {
+	flex: 0 0 auto;
+	width: 14px;
+	height: 14px;
+	margin-top: 3px;
+	padding: 0;
+	border-radius: 50%;
+	border: 1px solid rgba(0, 0, 0, 0.2);
+	cursor: pointer;
+}
+.nyareader-annotation-color.is-yellow { background: #ffd400; }
+.nyareader-annotation-color.is-green  { background: #7bd45a; }
+.nyareader-annotation-color.is-blue   { background: #6bb6ff; }
+.nyareader-annotation-color.is-pink   { background: #ff8fc7; }
+.nyareader-annotation-color.is-purple { background: #b48cff; }
+.nyareader-annotation-color.is-orange { background: #ffab5e; }
+/* 行内色板 */
+.nyareader-annotation-palette {
+	position: absolute;
+	display: flex;
+	gap: 6px;
+	padding: 6px 8px;
+	border-radius: 8px;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+	z-index: 5;
+}
+/* 让色板相对行定位 */
+.nyareader-annotation-row {
+	position: relative;
+}
+.nyareader-annotation-row:hover {
+	background: var(--background-modifier-hover);
+}
+
+/* ===== 划词浮层：高亮六色 / 笔记 / 复制 / 翻译 ===== */
+.nyareader-sel-popup {
+	position: absolute;
+	z-index: 30;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 8px 10px;
+	border-radius: 10px;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	box-shadow: 0 6px 22px rgba(0, 0, 0, 0.28);
+	user-select: none;
+}
+.nyareader-sel-popup.is-hidden {
+	display: none;
+}
+.nyareader-sel-colors {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+.nyareader-sel-color {
+	width: 18px;
+	height: 18px;
+	padding: 0;
+	border-radius: 50%;
+	border: 1px solid rgba(0, 0, 0, 0.2);
+	cursor: pointer;
+	transition: transform 0.08s ease;
+}
+.nyareader-sel-color:hover {
+	transform: scale(1.18);
+}
+/* 六色（与 Obsidian 原生高亮色系一致） */
+.nyareader-sel-color.is-yellow { background: #ffd400; }
+.nyareader-sel-color.is-green  { background: #7bd45a; }
+.nyareader-sel-color.is-blue   { background: #6bb6ff; }
+.nyareader-sel-color.is-pink   { background: #ff8fc7; }
+.nyareader-sel-color.is-purple { background: #b48cff; }
+.nyareader-sel-color.is-orange { background: #ffab5e; }
+
+.nyareader-sel-actions {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+.nyareader-sel-btn {
+	padding: 3px 8px;
+	font-size: 12px;
+	border-radius: 6px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-primary);
+	color: var(--text-normal);
+	cursor: pointer;
+}
+.nyareader-sel-btn:hover {
+	background: var(--background-modifier-hover);
+}
+
+/*
+ * 引擎渲染的可见高亮颜色（EPUB/MOBI 的 iframe 内 & TXT 宿主内通用）。
+ * 两种渲染路径共用同一套类名：
+ * - CSS Custom Highlight API：::highlight(nyar-yellow) 等伪元素
+ * - span 包裹降级路径：.nyar-hl.is-yellow
+ */
+.nyar-hl { background: rgba(255, 212, 0, 0.38); }
+.nyar-hl.is-yellow { background: rgba(255, 212, 0, 0.38); }
+.nyar-hl.is-green  { background: rgba(123, 212, 90, 0.38); }
+.nyar-hl.is-blue   { background: rgba(107, 182, 255, 0.38); }
+.nyar-hl.is-pink   { background: rgba(255, 143, 199, 0.38); }
+.nyar-hl.is-purple { background: rgba(180, 140, 255, 0.38); }
+.nyar-hl.is-orange { background: rgba(255, 171, 94, 0.38); }
+.nyar-hl[data-note="1"] { border-bottom: 2px solid var(--interactive-accent); }
+::highlight(nyar-yellow) { background-color: rgba(255, 212, 0, 0.38); }
+::highlight(nyar-green)  { background-color: rgba(123, 212, 90, 0.38); }
+::highlight(nyar-blue)   { background-color: rgba(107, 182, 255, 0.38); }
+::highlight(nyar-pink)   { background-color: rgba(255, 143, 199, 0.38); }
+::highlight(nyar-purple) { background-color: rgba(180, 140, 255, 0.38); }
+::highlight(nyar-orange) { background-color: rgba(255, 171, 94, 0.38); }
+
+/* ===== 底部进度条（transport）：页码 + 可拖动 seek ===== */
+.nyareader-transport {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	padding: 6px 12px calc(6px + env(safe-area-inset-bottom, 0px));
+	border-top: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	min-height: 34px;
+	user-select: none;
+}
+.nyareader-transport.is-hidden {
+	display: none;
+}
+.nyareader-transport-info {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 12px;
+	color: var(--text-muted);
+	white-space: nowrap;
+	/* 页码定宽，避免数字变化时进度条左右抖动 */
+	min-width: 96px;
+}
+.nyareader-transport .nyareader-page-indicator.is-hidden {
+	/* 滚动式格式没有总页数：保留容器避免进度条跳动，但文字透明度降到 0 */
+	visibility: hidden;
+}
+.nyareader-transport-percent {
+	font-variant-numeric: tabular-nums;
+	min-width: 40px;
+	text-align: right;
+	color: var(--text-normal);
+}
+/* 重排提示：大文件改字号/版式时出现，避免被误认为卡死 */
+.nyareader-relayout-hint {
+	font-size: 11px;
+	color: var(--text-muted);
+	white-space: nowrap;
+}
+.nyareader-relayout-hint.is-hidden {
+	display: none;
+}
+/* 进度条轨道：整行可点可拖 */
+.nyareader-seek {
+	position: relative;
+	flex: 1 1 auto;
+	height: 20px;
+	cursor: pointer;
+	touch-action: none;
+	display: flex;
+	align-items: center;
+}
+.nyareader-seek::before {
+	content: "";
+	position: absolute;
+	left: 0;
+	right: 0;
+	height: 4px;
+	border-radius: 2px;
+	background: var(--background-modifier-border);
+}
+.nyareader-seek-fill {
+	position: absolute;
+	left: 0;
+	height: 4px;
+	border-radius: 2px;
+	background: var(--interactive-accent);
+	pointer-events: none;
+}
+.nyareader-seek-thumb {
+	position: absolute;
+	top: 50%;
+	width: 12px;
+	height: 12px;
+	margin-left: -6px;
+	border-radius: 50%;
+	background: var(--interactive-accent);
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+	transform: translateY(-50%);
+	pointer-events: none;
+	transition: transform 0.1s ease;
+}
+.nyareader-seek:hover .nyareader-seek-thumb,
+.nyareader-seek.is-dragging .nyareader-seek-thumb {
+	transform: translateY(-50%) scale(1.35);
+}
+.nyareader-seek.is-dragging {
+	cursor: grabbing;
+}
+.nyareader-seek:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+	border-radius: 4px;
+}
+
 /* 视图标题栏内的"页码 · 缩放"信息条：与翻译按钮同一行，正文区零占用 */
 .nyareader-header-info {
 	display: flex;
@@ -98,15 +352,21 @@
 	width: 240px;
 }
 /*
- * 阅读区（宿主层壳）：只提供「尺寸 + 行宽约束 + 最小安全内边距」。
- * 正文页边距（body margin / PAGE_MARGIN_X / OUTER_PAD）由引擎和设置里的 margin 负责，
- * 宿主不再叠加固定 padding —— 旧实现 padding:20px 28px 与引擎留白叠加后左右达 ~66px。
+ * 阅读区（宿主层壳）：只提供「尺寸 + 最小安全内边距」。
+ * 正文页边距（margin / 页内边距）与行宽上限由引擎和设置负责：
+ * - 滚动模式：引擎在渲染文档内给 body 加 measure（设置里的 pageWidth）并居中；
+ * - 分页模式：引擎按 iframe 实测宽度算页宽/是否对开，因此宿主绝不能限制 iframe 宽度，
+ *   否则窗口越宽反而退不回双页（功能回退）。
+ * 旧实现 padding:20px 28px 与引擎留白叠加后左右达 ~66px，这里收到最小安全边。
  */
 .nyareader-reading {
 	/* 宿主内边距：默认收到最小安全边；主题或用户 CSS 片段可覆盖这两个变量 */
 	--nyar-reading-pad-x: 8px;
 	--nyar-reading-pad-y: 6px;
-	/* 正文行宽上限：74ch 与 720px 取小者，超宽窗口下居中约束，避免一行 150+ 字符 */
+	/*
+	 * 行宽上限（74ch 与 720px 取小者）：宿主层备用变量，供未来的滚动式内容/主题使用。
+	 * 注意：不作用在 .nyareader-html-iframe 上——渲染文档的行宽由引擎内部实现。
+	 */
 	--nyar-measure: min(74ch, 720px);
 	flex: 1;
 	min-width: 0;
@@ -137,10 +397,10 @@
 }
 
 /*
- * HTML 文档式阅读（EPUB/MOBI/AZW3）：内容是 iframe 内的完整文档，宿主只给尺寸与行宽约束。
+ * HTML 文档式阅读（EPUB/MOBI/AZW3）：内容是 iframe 内的完整文档，宿主只给尺寸。
  * - display/width/height/min-height 显式声明，避免 iframe 被 flex/inline 行为顶出阅读区；
- * - max-width 走 --nyar-measure 并居中：超宽窗口下正文不再无限拉宽（原来一行 150+ 字符），
- *   窄窗口下 width:100% 更小，优先贴合容器，不会产生横向滚动条；
+ * - 必须铺满阅读区：不要 max-width / margin-inline。分页引擎按 iframe.clientWidth 计算
+ *   页宽与单双页回退，限制宽度会让宽窗口永远退回单页；
  * - 不设固定高度、不加 overflow 限制：图片与长页面在 iframe 内部滚动，宿主不裁切。
  */
 .nyareader-html-iframe {
@@ -148,8 +408,6 @@
 	width: 100%;
 	height: 100%;
 	min-height: 0;
-	max-width: var(--nyar-measure, 720px);
-	margin-inline: auto;
 	border: 0;
 	background: transparent;
 }
@@ -529,6 +787,26 @@
 }
 .nyareader-toc-item:hover {
 	background: var(--background-modifier-hover);
+}
+/* 当前所在章节（点过的目录项）：让用户知道自己在哪一章 */
+.nyareader-toc-item.is-current {
+	background: var(--background-modifier-hover);
+	color: var(--text-accent);
+	font-weight: 600;
+	border-left: 2px solid var(--interactive-accent);
+}
+
+/* 排序控件：贴右，紧挨「＋新建文件夹」（用户要求往右靠） */
+.nyareader-shelf-sort-wrap {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	margin-left: auto;
+	margin-right: 2px;
+}
+.nyareader-shelf-sort-label {
+	font-size: 12px;
+	color: var(--text-muted);
 }
 .nyareader-toc-empty {
 	padding: 10px;
@@ -1256,9 +1534,6 @@
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
-}
-.nyareader-shelf-main-bar {
-	flex-shrink: 0;
 }
 .nyareader-shelf-main-scroll {
 	flex: 1;

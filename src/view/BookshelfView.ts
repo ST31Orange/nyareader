@@ -123,6 +123,14 @@ export class BookshelfView extends ItemView {
 
 		await this.migrateIfNeeded();
 		await this.render();
+		// 阅读页写进度后，书架常常已经打开着（只是不可见）。切回书架时**就地刷新进度**，
+		// 避免"两边进度不一样"（数据本身是同步的，缺的是视图刷新）。
+		this.registerEvent(
+			this.app.workspace.on("active-leaf-change", (leaf) => {
+				if (leaf?.view === this) this.syncProgressFromIndex();
+			})
+		);
+		this.registerEvent(this.app.workspace.on("layout-change", () => this.syncProgressFromIndex()));
 		this.attachRootDragFallback();
 	}
 
@@ -196,6 +204,43 @@ export class BookshelfView extends ItemView {
 
 	// ---------- 渲染 ----------
 
+	/**
+	 * 从 bookIndex 就地刷新已渲染卡片的进度（不重建 DOM）。
+	 *
+	 * 为什么需要：`render()` 只在打开视图/切换排序时执行，而进度是阅读页在**另一个视图**里
+	 * 持续写入 index 的；书架保持打开但不可见时不会自动重画，于是"两边进度不一样"。
+	 * 这里只改进度条宽度与百分比文字，不动其它 DOM，因此不会丢滚动位置、不闪烁。
+	 */
+	private syncProgressFromIndex(): void {
+		if (!this.rootEl?.isConnected) return;
+		const progressOf = (path: string): number | undefined =>
+			this.plugin.bookIndex.list().find((e) => e.path === path)?.progress?.percentage;
+		// 卡片视图（full / compact）：进度条 + 元信息百分比
+		for (const card of Array.from(this.rootEl.querySelectorAll<HTMLElement>(".nyareader-shelf-card[data-path]"))) {
+			const path = card.dataset.path;
+			if (!path) continue;
+			const pct = progressOf(path);
+			if (pct === undefined) continue;
+			const width = `${Math.round(pct * 100)}%`;
+			const bar = card.querySelector<HTMLElement>(".nyareader-shelf-progress-bar");
+			if (bar) bar.style.width = width;
+			const metaText = card.querySelector<HTMLElement>(".nyareader-shelf-card-meta-text");
+			if (metaText) {
+				const entry = this.plugin.bookIndex.list().find((e) => e.path === path);
+				metaText.setText(`${Math.round(pct * 100)}%${entry?.lastOpenedAt ? ` · ${this.fmtTime(entry.lastOpenedAt)}` : ""}`);
+			}
+		}
+		// 列表视图：右侧百分比
+		for (const row of Array.from(this.rootEl.querySelectorAll<HTMLElement>(".nyareader-shelf-list-row[data-path]"))) {
+			const path = row.dataset.path;
+			if (!path) continue;
+			const pct = progressOf(path);
+			if (pct === undefined) continue;
+			const span = row.querySelector<HTMLElement>(".nyareader-shelf-list-pct");
+			if (span) span.setText(`${Math.round(pct * 100)}%`);
+		}
+	}
+
 	private async render(): Promise<void> {
 		this.rootEl.empty();
 		this.libraries = await this.service.loadLibraries();
@@ -224,13 +269,6 @@ export class BookshelfView extends ItemView {
 		});
 		const actions = header.createDiv({ cls: "nyareader-shelf-actions" });
 		actions.createEl("button", { text: "＋ 新建书库", cls: "nyareader-shelf-btn" }).addEventListener("click", () => void this.createLibrary());
-		const sel = actions.createEl("select", { cls: "nyareader-shelf-sort" });
-		for (const o of SORT_OPTIONS) sel.createEl("option", { value: o.value, text: o.label });
-		sel.value = this.sort;
-		sel.addEventListener("change", () => {
-			this.sort = sel.value as BookshelfSort;
-			void this.render();
-		});
 
 		// 主体：左书库列 + 右文件夹区
 		const body = this.rootEl.createDiv({ cls: "nyareader-shelf-body" });
@@ -287,6 +325,16 @@ export class BookshelfView extends ItemView {
 		void h3;
 		const span = bar.createEl("span", { cls: "nyareader-shelf-sub", text: `${this.folders.length} 个文件夹` });
 		void span;
+		// 排序控件放在"当前书库"这一行：它作用于书库内的书，与书库区对齐（用户要求从顶部挪下来）
+		const sortWrap = bar.createEl("label", { cls: "nyareader-shelf-sort-wrap" });
+		sortWrap.createSpan({ cls: "nyareader-shelf-sort-label", text: "排序" });
+		const sel = sortWrap.createEl("select", { cls: "nyareader-shelf-sort", attr: { "aria-label": "书架排序方式" } });
+		for (const o of SORT_OPTIONS) sel.createEl("option", { value: o.value, text: o.label });
+		sel.value = this.sort;
+		sel.addEventListener("change", () => {
+			this.sort = sel.value as BookshelfSort;
+			void this.render();
+		});
 		bar.createEl("button", { text: "＋ 新建文件夹", cls: "nyareader-shelf-btn" }).addEventListener("click", () => void this.createFolder());
 
 		// 只有文件夹区域滚动，标题行与新建按钮固定
@@ -353,6 +401,8 @@ export class BookshelfView extends ItemView {
 		const entry = this.plugin.bookIndex.list().find((e) => e.path === path);
 		const card = document.createElement("div");
 		card.className = `nyareader-shelf-card is-${mode}`;
+		// 供 syncProgressFromIndex() 就地刷新进度（不重建 DOM）
+		card.setAttribute("data-path", path);
 		card.addEventListener("click", () => void this.openBook(path));
 		card.setAttribute("draggable", "true");
 		card.addEventListener("dragstart", (e) => {
@@ -376,6 +426,7 @@ export class BookshelfView extends ItemView {
 
 		if (mode === "list") {
 			const row = card.createDiv({ cls: "nyareader-shelf-list-row" });
+			row.setAttribute("data-path", path);
 			row.createSpan({ cls: "nyareader-shelf-list-title", text: entry?.title ?? base });
 			row.createSpan({ cls: "nyareader-shelf-cover-ext is-mini", text: ext.toUpperCase() });
 			row.createSpan({ cls: "nyareader-shelf-list-pct", text: `${Math.round((entry?.progress?.percentage ?? 0) * 100)}%` });
@@ -390,12 +441,32 @@ export class BookshelfView extends ItemView {
 			setIcon(placeholder, "book-open");
 			const file = this.plugin.app.vault.getAbstractFileByPath(path);
 			if (file instanceof TFile) {
-				void this.plugin.cover.getCoverUrl(file, entry?.fingerprint).then((url) => {
-					if (!url || !cover.isConnected) return;
-					placeholder.remove();
-					const img = cover.createEl("img", { attr: { src: url, alt: "", loading: "lazy" } });
-					img.addClass("nyareader-shelf-cover-img");
-				});
+				void this.plugin.cover
+					.getCoverUrl(file, entry?.fingerprint)
+					.then((url) => {
+						if (!url || !cover.isConnected) return;
+						placeholder.remove();
+						// 不加 loading="lazy"：卡片是一次性渲染的，某些布局/虚拟滚动下
+						// 懒加载可能永远不触发，表现就是"封面随机不显示"。
+						const img = cover.createEl("img", { attr: { src: url, alt: "" } });
+						img.addClass("nyareader-shelf-cover-img");
+						// 兜底：万一 URL 失效/解码失败，恢复占位而不是留白
+						img.addEventListener(
+							"error",
+							() => {
+								img.remove();
+								if (!cover.querySelector(".nyareader-shelf-cover-placeholder")) {
+									const fallback = cover.createDiv({ cls: "nyareader-shelf-cover-placeholder" });
+									setIcon(fallback, "book-open");
+								}
+							},
+							{ once: true }
+						);
+					})
+					.catch((e) => {
+						// 封面失败不能影响书架渲染：记录并保留占位
+						console.warn("NyaReader: 封面加载失败", path, e);
+					});
 			}
 		}
 

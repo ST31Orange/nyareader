@@ -9,6 +9,7 @@ import type { Plugin } from "obsidian";
 import type { Annotation, AnnotationKind, IAnnotationStore } from "./AnnotationModel";
 import { annotationId } from "./AnnotationModel";
 import { writePdfAnnotation, removePdfAnnotation, expectedSubtype } from "./PdfAnnotationWriter";
+import type { WriteAnnotationInput } from "./PdfAnnotationWriter";
 import type { PdfBackupService } from "./PdfBackupService";
 import { pdfjs } from "../books/formats/pdf/pdfWorker";
 
@@ -92,6 +93,32 @@ export class PdfInlineAnnotationStore implements IAnnotationStore {
 		const bytes = await writePdfAnnotation(original, input);
 		// 回读校验：确认新文件可被 pdf.js 解析且含预期注释
 		await this.verify(pdfPath, bytes, input.pageIndex, input.kind);
+		return { backupPath: backup.backupPath, bytes };
+	}
+
+	/**
+	 * 批量写回 + 一次写盘（批注 P0 的节流合并用）。
+	 *
+	 * 与 {@link applyToFile} 的区别：整批只备份一次、只读一次文件、只写一次盘。
+	 * 逐条在同一份内存字节上追加注释，最后**统一回读校验**；任何一步失败都不写盘
+	 * （加密 PDF 会在 `PDFDocument.load` 抛 `EncryptedPDFError`，由调用方兜底）。
+	 */
+	async applyBatchAndWrite(pdfPath: string, inputs: WriteAnnotationInput[]): Promise<{ backupPath?: string; bytes: Uint8Array }> {
+		if (!inputs.length) throw new Error("applyBatchAndWrite：批次为空");
+		const backup = await this.backup.ensureBackup(pdfPath);
+		const original = await this.plugin.app.vault.adapter.readBinary(pdfPath);
+		// 用 `Uint8Array`（ArrayBufferLike）显式声明：pdf-lib 的 save() 返回的是宽泛的
+		// Uint8Array<ArrayBufferLike>，直接让 TS 推断成 Uint8Array<ArrayBuffer> 会赋值失败。
+		let bytes: Uint8Array = new Uint8Array(original);
+		for (const input of inputs) {
+			bytes = await writePdfAnnotation(bytes.slice().buffer as ArrayBuffer, input);
+		}
+		// 回读校验：pdf.js 能解析 + 每条都能在目标页找到预期 Subtype
+		await this.verify(pdfPath, bytes, inputs[0].pageIndex, inputs[0].kind);
+		for (const input of inputs.slice(1)) {
+			await this.verifyWithPdfLib(bytes, input.pageIndex, input.kind);
+		}
+		await this.plugin.app.vault.adapter.writeBinary(pdfPath, bytes.slice().buffer as ArrayBuffer);
 		return { backupPath: backup.backupPath, bytes };
 	}
 

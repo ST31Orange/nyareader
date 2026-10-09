@@ -10,7 +10,9 @@
  * 纯逻辑 + 注入 DataAdapter 适配，便于单元测试。
  */
 import type { BookFormat } from "../../types";
+import { legacySidecarPaths } from "../../utils/annotation-sidecar-path";
 
+/** 支持的电子书扩展名（书架只列这些）。 */
 export const SUPPORTED_BOOK_EXT = new Set(["epub", "pdf", "mobi", "azw3", "azw", "txt"]);
 
 export interface BookshelfAdapter {
@@ -206,7 +208,46 @@ export class BookshelfService {
 		const fileName = ext ? `${base}.${ext}` : base;
 		const dest = await this.uniquePath(dir, fileName);
 		await this.adapter.rename(vaultPath, dest);
+		// 双保险：把书旁边的批注侧车一起搬走（主存储已按指纹，不依赖这一步；
+		// 但旧侧车文件仍可能在书旁，不搬就会留在原文件夹成为孤儿）。
+		try {
+			await this.moveAdjacentSidecars(vaultPath, dest);
+		} catch {
+			/* 侧车搬迁失败不影响书本身的移动 */
+		}
 		return dest;
+	}
+
+	/**
+	 * 搬迁"书旁边"的批注侧车（存在才搬；不存在则跳过；不覆盖已存在的目标文件）。
+	 *
+	 * 命名规则复用 `utils/annotation-sidecar-path` 的纯函数（与 `SidecarAnnotationStore`
+	 * 完全一致，避免两处各写一套正则而漂移）：
+	 * - v2：`<书名含扩展名>.annotations.json`
+	 * - v1：`<书名去扩展名>.annotations.json`
+	 * - 无扩展名时的 v2 变体：`<书名>.annotations.v2.json`
+	 *
+	 * 注意：指纹主存储（`nyareader/annotations/<fingerprint>.json`）与书路径无关，
+	 * **无需搬迁**；这里只是把遗留在书旁的旧文件一起带走，避免成为孤儿。
+	 */
+	async moveAdjacentSidecars(fromBookPath: string, toBookPath: string): Promise<string[]> {
+		const pairs: Array<[string, string]> = [];
+		const src = legacySidecarPaths(fromBookPath);
+		const dst = legacySidecarPaths(toBookPath);
+		for (let i = 0; i < src.length; i++) {
+			pairs.push([src[i], dst[i]]);
+		}
+		const moved: string[] = [];
+		const seen = new Set<string>();
+		for (const [from, to] of pairs) {
+			if (from === to || seen.has(to)) continue;
+			seen.add(to);
+			if (!(await this.adapter.exists(from).catch(() => false))) continue;
+			if (await this.adapter.exists(to).catch(() => false)) continue; // 不覆盖已存在的
+			await this.adapter.rename(from, to);
+			moved.push(to);
+		}
+		return moved;
 	}
 
 	/** 生成不冲突的目标路径（同名自动加 (1)、(2)…）。 */

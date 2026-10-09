@@ -13,6 +13,75 @@ export interface PageMetrics {
 	height: number;
 }
 
+/** 按行组织页面时的布局参数（PdfEngine 的行容器模型：行内水平排列，行间纵向堆叠）。 */
+export interface PdfRowLayout {
+	/** 每行几页（单页 1 / 双页对开 2） */
+	cols: number;
+	/** 行间距与页间距（px，两处同值） */
+	gap: number;
+	/** 滚动内容容器相对行容器的顶部偏移（.nyareader-pdf-pages 的 padding-top） */
+	contentTop: number;
+}
+
+/**
+ * 由各页高度纯计算每页在滚动内容中的 top（不读 DOM）。
+ *
+ * 为什么不用 `el.offsetTop` 逐个读：在 3000 页文档上，每渲染一页都要重算一次
+ * 全部页偏移（`fixSlotSize` 里的 `for (const s of this.slots) s.top = s.el.offsetTop`），
+ * 于是「滚动一屏（约 50 页）」变成 O(50 × 3000) 次强制布局 —— 这是大 PDF 滚动卡顿的根因。
+ * 行高 = 该行内最高的页高，行与行之间叠加 gap，因此可以纯算术算出全部偏移。
+ *
+ * @param heights 各页高度（按页序，长度应与 cols 对应的分组数一致）
+ * @param layout 行布局参数
+ * @returns 每页的 top（与 heights 同序）
+ */
+export function computeRowTops(heights: readonly number[], layout: PdfRowLayout): number[] {
+	const n = heights.length;
+	const tops = new Array<number>(n);
+	const cols = Math.max(1, Math.floor(layout.cols));
+	const gap = Math.max(0, layout.gap);
+	let y = Math.max(0, layout.contentTop);
+	for (let i = 0; i < n; i += cols) {
+		let rowHeight = 0;
+		for (let k = i; k < Math.min(n, i + cols); k++) rowHeight = Math.max(rowHeight, heights[k] || 0);
+		for (let k = i; k < Math.min(n, i + cols); k++) tops[k] = y;
+		y += rowHeight + gap;
+	}
+	return tops;
+}
+
+/**
+ * 只有第 `changed` 页的高度变化时，增量修正其后的 top。
+ *
+ * 单页高度变化只影响「它所在行及其后所有行」的纵向位置，前面的页不动，
+ * 因此无需重算全表（O(n) → O(受影响页数)）。
+ * 说明：PdfEngine 目前采用「批次结束统一纯算术重算」（computeRowTops 不读 DOM，
+ * 3000 页也只有微秒级），本函数作为可选的增量口径保留并单测，供后续按需启用。
+ *
+ * @returns 实际被修正的页数（用于测试/统计）
+ */
+export function shiftTopsAfter(
+	tops: number[],
+	heights: readonly number[],
+	changed: number,
+	delta: number,
+	layout: PdfRowLayout
+): number {
+	const n = tops.length;
+	if (changed < 0 || changed >= n || delta === 0) return 0;
+	const cols = Math.max(1, Math.floor(layout.cols));
+	const rowStart = changed - (changed % cols);
+	const rowEnd = Math.min(n, rowStart + cols);
+	void heights;
+	let affected = 0;
+	for (let i = rowEnd; i < n; i++) {
+		tops[i] += delta;
+		affected++;
+	}
+	return affected;
+}
+
+
 /** 二分查找第一个 bottom >= y 的页面索引（pages 按 top 升序）。 */
 export function lowerBound(pages: PageMetrics[], y: number): number {
 	if (pages.length === 0) return 0;

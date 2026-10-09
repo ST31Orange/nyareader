@@ -39,6 +39,8 @@ const COLOR_RGB: Record<string, [number, number, number]> = {
 	blue: [0.4, 0.6, 1],
 	pink: [1, 0.4, 0.6],
 	orange: [1, 0.7, 0.2],
+	// 六色模型的紫色：缺了它 PDF 的 /C 会静默回退成黄色（ReaderController 现在会传 purple）
+	purple: [0.6, 0.4, 1],
 };
 
 /**
@@ -136,6 +138,20 @@ export async function removePdfAnnotation(pdfBytes: ArrayBuffer, pageIndex: numb
 /** 根据 Annotation 类型决定 PDF 子类型与是否含 QuadPoints（供回读校验）。 */
 export function expectedSubtype(kind: AnnotationKind): string {
 	return KIND_SUBTYPE[kind];
+}
+
+/**
+ * 是否是"PDF 已加密"这类**能力性失败**（pdf-lib 官方限制：不支持加密文档，
+ * `PDFDocument.load` 抛 `EncryptedPDFError`；`ignoreEncryption: true` 也不会解密）。
+ *
+ * 为什么单独抽成纯函数：调用方要靠它区分"该降级到侧车存储"与"真的写坏了"，
+ * 而且它必须能被单测覆盖（构造真实的 `EncryptedPDFError` 实例即可）。
+ */
+export function isEncryptedPdfError(error: unknown): boolean {
+	if (!error) return false;
+	const name = (error as { name?: string }).name ?? "";
+	const message = error instanceof Error ? error.message : String(error);
+	return name === "EncryptedPDFError" || /encrypt/i.test(message);
 }
 
 

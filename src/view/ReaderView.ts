@@ -18,20 +18,15 @@ import type { ReaderControllerEvents } from "./ReaderController";
 import { AnnotationListModal } from "./AnnotationListModal";
 import { PromptModal } from "./components/PromptModal";
 import type { ZoomMode } from "../services/books/IReaderEngine";
-import type { BookModel } from "../types";
+import type { BookModel, RelayoutState } from "../types";
 import { debounce } from "../utils/debounce";
 import { displayPageFromLocation } from "../utils/paging";
+import { formatPageIndicator, formatSeekPercent, ratioFromClientX, stepSeekPercent } from "../utils/transport";
+import { HIGHLIGHT_COLORS, HIGHLIGHT_COLOR_LABEL, type HighlightColor } from "../services/annotations/AnnotationModel";
+import type { Annotation } from "../services/annotations/AnnotationModel";
+import { annotationExportFileName, annotationsToMarkdown } from "../utils/annotation-markdown";
 
 export { READER_VIEW_TYPE } from "./ReaderViewTypes";
-
-/**
- * 控制器事件 + 打开阶段回调。
- * onStage 由 Stream B 在 ReaderControllerEvents 上新增；这里用交叉类型声明，
- * 无论对方是否已落地都不会破坏类型检查（对方落地后签名一致，直接兼容）。
- */
-type ReaderViewEvents = ReaderControllerEvents & {
-	onStage?: (stage: string, detail?: { loaded: number; total: number }) => void;
-};
 
 /** 引擎上报的打开阶段 -> 用户可读文案（未知阶段原样显示，不抛异常）。 */
 const STAGE_LABELS: Record<string, string> = {
@@ -91,6 +86,40 @@ export class ReaderView extends ItemView {
 	private headerAnchorEl: HTMLElement | null = null;
 	/** 当前书总页数（分页格式用于页码指示） */
 	private totalPages = 0;
+	// ---------- 底部进度条（transport） ----------
+	/** 底部条容器 */
+	private transportEl: HTMLElement | null = null;
+	/** 可拖动进度条轨道 */
+	private seekTrackEl: HTMLElement | null = null;
+	/** 进度条已填充部分 */
+	private seekFillEl: HTMLElement | null = null;
+	/** 进度条滑块 */
+	private seekThumbEl: HTMLElement | null = null;
+	/** 进度百分比文字（脚注内） */
+	private transportPercentEl: HTMLElement | null = null;
+	/** "正在重新排版…"提示（大文件改字号时） */
+	private relayoutHintEl: HTMLElement | null = null;
+	/** 重排提示的淡出定时器 */
+	private relayoutHintTimer: number | null = null;
+	/** 拖动中：期间忽略引擎的 locationChanged，避免与手指位置打架 */
+	private seeking = false;
+	/** seek 目标（0~1，整本书进度） */
+	private seekPercent = 0;
+	/**
+	 * 整本内容是否已全部排入文档。
+	 * 懒加载大书期间引擎只知道"已加载部分"的页数，此时不能把它当总页数显示
+	 * （否则用户会看到 6k 页的书显示成 2k 页，以为内容被截断）。
+	 */
+	private contentFullyLoaded = true;
+	/** 当前页码（1 起；未知时为 NaN），供进度条 aria 文本使用 */
+	private currentPageNumber = Number.NaN;
+	// ---------- 划词浮层 ----------
+	/** 划词浮层元素 */
+	private selectionPopupEl: HTMLElement | null = null;
+	/** 当前选中文本（浮层操作用） */
+	private selectionText = "";
+	/** 最后使用的高亮颜色（下次"高亮"按钮沿用） */
+	private lastHighlightColor: HighlightColor = "yellow";
 	/**
 	 * 打开流程进行中（大文件读取/解析/排版）：此期间忽略模式/布局切换、翻页快捷键与
 	 * 批注类操作，并在 UI 上禁用相关控件，避免"点了没反应"被当成按钮失灵。
@@ -142,17 +171,23 @@ export class ReaderView extends ItemView {
 		this.readingArea = this.bodyEl.createDiv({ cls: "nyareader-reading" });
 		this.readingArea.setAttribute("tabindex", "0");
 		this.transHost = this.bodyEl.createDiv({ cls: "nyareader-trans-host" });
+		// 底部进度条（页码 + 可拖动 seek）：放在内容区之外，不占用正文宽度
+		this.buildTransport(container);
 		this.applyPanelWidth();
 
 		// 用变量（非内联字面量）传入，兼容 onStage 尚未落地到 ReaderControllerEvents 的情况
-		const events: ReaderViewEvents = {
+		const events: ReaderControllerEvents = {
 			onBookOpened: (book) => this.onBookOpened(book),
 			onError: (message) => this.onOpenError(message),
 			onProgress: () => undefined,
-			// 打开阶段（读取/解析/排版）→ 加载遮罩文案与百分比；未落地时该回调不会被调用
+			// 打开阶段（reading/parsing/index/rendering/done）→ 加载遮罩文案与百分比
 			onStage: (stage, detail) => this.onStage(stage, detail),
+			onRelayoutState: (state) => this.onRelayoutState(state),
+			// 点击正文里的高亮 → 打开批注面板并定位到该条
+			onAnnotationClick: () => this.openAnnotations(),
 		};
 		this.controller = new ReaderController(this.plugin, events);
+		// 打开阶段回调是控制器事件的可选字段：老版本/未落地时静默降级（不抛异常）
 
 		// 右侧翻译面板（引擎配置在 NyaLingo，此处只负责目标语言与展示）
 		this.transPanel = new TranslationPanel({
@@ -203,6 +238,8 @@ export class ReaderView extends ItemView {
 		}
 		this.setBusy(true);
 		this.ready = false;
+		// 新书默认"未全部排完"：懒加载格式会由 onStage 逐步纠正为 true
+		this.contentFullyLoaded = true;
 		this.currentFile = file;
 		this.updateTitle();
 		this.readingArea.empty();
@@ -255,13 +292,27 @@ export class ReaderView extends ItemView {
 		this.loadingTextEl = null;
 	}
 
-	/** 控制器上报的打开阶段：文案含阶段与百分比（total 为 0 时只显示阶段）。 */
+	/**
+	 * 控制器上报的打开阶段：文案含阶段与百分比（total 为 0 时只显示阶段）。
+	 *
+	 * 另外承担一个重要职责：**大文件懒加载期间不把"已加载页数"当总页数显示**。
+	 * 用户在 6k 页的书里看到 "2k 页" 会以为内容被截断了；这里只在章节全部加载完
+	 * （loaded >= total）后才把引擎页数当作权威总页数。
+	 */
 	private onStage(stage: string, detail?: { loaded: number; total: number }): void {
-		if (!this.busy) return; // 打开已结束，迟到的阶段消息忽略
 		const key = typeof stage === "string" ? stage.trim() : "";
-		const label = STAGE_LABELS[key.toLowerCase()] ?? (key || "正在打开");
 		const total = Number(detail?.total ?? 0);
 		const loaded = Number(detail?.loaded ?? 0);
+		if (Number.isFinite(total) && total > 0 && Number.isFinite(loaded)) {
+			// 懒加载进度：据此判断"整本是否已排完"
+			const fullyLoaded = loaded >= total;
+			if (fullyLoaded !== this.contentFullyLoaded) {
+				this.contentFullyLoaded = fullyLoaded;
+				this.syncPagingUi();
+			}
+		}
+		if (!this.busy) return; // 打开已结束，迟到的阶段消息只用于上面的状态同步
+		const label = STAGE_LABELS[key.toLowerCase()] ?? (key || "正在打开");
 		if (Number.isFinite(total) && total > 0 && Number.isFinite(loaded)) {
 			const percent = Math.max(0, Math.min(100, Math.round((loaded / total) * 100)));
 			this.showLoading(`${label}… ${percent}%`);
@@ -290,6 +341,171 @@ export class ReaderView extends ItemView {
 		}
 	}
 
+	// ---------- 划词浮层（高亮 / 笔记 / 复制 / 翻译） ----------
+
+	/**
+	 * 在选区上方显示操作浮层。
+	 *
+	 * 定位：从**焦点所在文档**（可能是 iframe 内部）取选区矩形，再换算到本视图坐标系。
+	 * 这样 EPUB/MOBI（iframe）与 TXT（宿主 DOM）用同一套逻辑。
+	 */
+	private showSelectionPopup(text: string): void {
+		if (!this.isReaderInteractive()) return;
+		const el = this.selectionPopupEl ?? this.buildSelectionPopup();
+		if (!el) return;
+		this.selectionText = text;
+		el.removeClass("is-hidden");
+		this.positionSelectionPopup();
+	}
+
+	private hideSelectionPopup(): void {
+		this.selectionPopupEl?.addClass("is-hidden");
+		this.selectionText = "";
+	}
+
+	/** 构造浮层 DOM（只构造一次，之后复用）。 */
+	private buildSelectionPopup(): HTMLElement | null {
+		const host = this.readingArea;
+		if (!host) return null;
+		const popup = host.createDiv({ cls: "nyareader-sel-popup is-hidden" });
+		popup.setAttribute("role", "toolbar");
+		popup.setAttribute("aria-label", "选中文本操作");
+
+		// 六色高亮：点色块直接以该颜色高亮
+		const swatches = popup.createDiv({ cls: "nyareader-sel-colors" });
+		for (const color of HIGHLIGHT_COLORS) {
+			const sw = swatches.createEl("button", {
+				cls: `nyareader-sel-color is-${color}`,
+				attr: { title: `高亮（${HIGHLIGHT_COLOR_LABEL[color]}）`, "aria-label": `用${HIGHLIGHT_COLOR_LABEL[color]}色高亮`, type: "button" },
+			});
+			sw.addEventListener("mousedown", (e) => e.preventDefault()); // 保住选区
+			sw.addEventListener("click", () => void this.addHighlightWithColor(color));
+		}
+
+		const main = popup.createDiv({ cls: "nyareader-sel-actions" });
+		const mk = (label: string, title: string, fn: () => void): HTMLButtonElement => {
+			const b = main.createEl("button", { cls: "nyareader-sel-btn", text: label, attr: { title, type: "button" } });
+			b.addEventListener("mousedown", (e) => e.preventDefault());
+			b.addEventListener("click", fn);
+			return b;
+		};
+		mk("高亮", "用当前颜色高亮", () => void this.addHighlightWithColor(this.lastHighlightColor));
+		mk("笔记", "添加笔记", () => this.noteSelection());
+		mk("复制", "复制选中文本", () => void this.copySelection());
+		mk("翻译", "翻译选中文本（打开翻译面板）", () => this.translateSelectionFromPopup());
+
+		// 点击浮层之外/滚动/按键都收起
+		this.registerDomEvent(document, "mousedown", (evt) => {
+			const t = evt.target as Node | null;
+			if (t && !popup.contains(t)) this.hideSelectionPopup();
+		});
+		this.registerDomEvent(document, "keydown", (evt) => {
+			if (evt.key === "Escape") this.hideSelectionPopup();
+		});
+		this.registerDomEvent(this.readingArea, "scroll", () => this.hideSelectionPopup());
+
+		this.selectionPopupEl = popup;
+		return popup;
+	}
+
+	/** 把浮层放到选区正上方（越界时翻到下方），并做左右夹取。 */
+	private positionSelectionPopup(): void {
+		const popup = this.selectionPopupEl;
+		if (!popup) return;
+		const rect = this.currentSelectionRect();
+		if (!rect) return;
+		const host = this.readingArea.getBoundingClientRect();
+		const pw = popup.offsetWidth;
+		const ph = popup.offsetHeight;
+		// 相对宿主阅读区的坐标
+		let left = rect.left - host.left + rect.width / 2 - pw / 2;
+		let top = rect.top - host.top - ph - 8;
+		if (top < 0) top = rect.bottom - host.top + 8; // 上方放不下 → 放下方
+		left = Math.max(4, Math.min(left, Math.max(4, host.width - pw - 4)));
+		top = Math.max(2, Math.min(top, Math.max(2, host.height - ph - 2)));
+		popup.style.left = `${Math.round(left)}px`;
+		popup.style.top = `${Math.round(top)}px`;
+	}
+
+	/**
+	 * 当前选区在**本视图坐标系**下的矩形。
+	 * 选区可能落在 iframe 内（EPUB/MOBI），此时加上 iframe 自身的偏移。
+	 */
+	private currentSelectionRect(): DOMRect | null {
+		const iframe = this.readingArea.querySelector("iframe");
+		const doc = iframe?.contentDocument ?? document;
+		const win = doc.defaultView ?? window;
+		const sel = win.getSelection();
+		if (!sel || sel.isCollapsed || sel.rangeCount === 0) return null;
+		const r = sel.getRangeAt(0).getBoundingClientRect();
+		if (!r || (r.width === 0 && r.height === 0)) return null;
+		if (!iframe) return r;
+		const fr = iframe.getBoundingClientRect();
+		// iframe 内坐标 → 宿主坐标
+		return new DOMRect(fr.left + r.left, fr.top + r.top, r.width, r.height);
+	}
+
+	/** 以指定颜色高亮当前选区（颜色选择即写入最后使用的颜色）。 */
+	private async addHighlightWithColor(color: HighlightColor): Promise<void> {
+		this.lastHighlightColor = color;
+		this.hideSelectionPopup();
+		await this.addHighlight(color);
+	}
+
+	/** 给当前选区加笔记（高亮 + 笔记一起存）。 */
+	private noteSelection(): void {
+		const controller = this.controller;
+		if (!controller) return;
+		this.hideSelectionPopup();
+		new PromptModal(this.app, {
+			title: "添加笔记",
+			multiline: true,
+			placeholder: "笔记内容",
+			submitText: "保存",
+			onSubmit: async (note) => {
+				await this.addAnnotationWithNote(note);
+			},
+		}).open();
+	}
+
+	private async copySelection(): Promise<void> {
+		const text = this.selectionText;
+		this.hideSelectionPopup();
+		if (!text) return;
+		try {
+			await navigator.clipboard.writeText(text);
+			new Notice("NyaReader：已复制选中文本。", 2000);
+		} catch {
+			new Notice("NyaReader：复制失败（剪贴板不可用）。", 3000);
+		}
+	}
+
+	private translateSelectionFromPopup(): void {
+		const text = this.selectionText;
+		this.hideSelectionPopup();
+		if (!text) return;
+		void this.controller?.translateSelection(text, this.plugin.settings.translation.targetLanguage).catch(() => {
+			new Notice("NyaReader：翻译失败，请检查 NyaLingo 是否可用。", 4000);
+		});
+	}
+
+	/** 新增批注（颜色/笔记由调用方决定）。 */
+	private async addHighlight(color: HighlightColor, note?: string): Promise<void> {
+		const controller = this.controller;
+		if (!controller) return;
+		try {
+			// 兼容：color 由 Controller 透传到锚点/侧车（stream-i 落地后签名变为 addAnnotation(kind, note, color)）
+			const fn = controller.addAnnotation as (kind: "highlight" | "note", note?: string, color?: HighlightColor) => Promise<unknown>;
+			await fn.call(controller, note ? "note" : "highlight", note, color);
+		} catch (e) {
+			new Notice(`NyaReader：添加批注失败（${e instanceof Error ? e.message : String(e)}）`, 5000);
+		}
+	}
+
+	private async addAnnotationWithNote(note: string): Promise<void> {
+		await this.addHighlight(this.lastHighlightColor, note);
+	}
+
 	private onBookOpened(book: BookModel): void {
 		this.renderToc(book);
 	}
@@ -299,9 +515,20 @@ export class ReaderView extends ItemView {
 		try {
 			const engine = this.controller?.currentEngine;
 			if (!engine || !this.transPanel) return;
-			engine.on("locationChanged", (payload) => this.updatePageIndicator(payload.location));
+			engine.on("locationChanged", (payload) => {
+				this.updatePageIndicator(payload.location);
+				// 底部进度条跟随引擎位置；拖动中不覆盖用户手势
+				this.syncSeekBar();
+			});
 			engine.on("selection", (payload) => {
-				if (this.transPanel?.isVisible() && payload.text?.trim()) this.transPanel.translateSelection(payload.text);
+				if (!payload.text?.trim()) {
+					this.hideSelectionPopup();
+					return;
+				}
+				// 划词翻译（翻译面板打开时）
+				if (this.transPanel?.isVisible()) this.transPanel.translateSelection(payload.text);
+				// 划词浮层（高亮/笔记/复制/翻译）
+				this.showSelectionPopup(payload.text);
 			});
 			engine.on("zoomChanged", (payload) => this.syncZoomUi(payload.mode, payload.percent));
 			const zoom = engine.getZoom?.();
@@ -319,7 +546,6 @@ export class ReaderView extends ItemView {
 		const show = Boolean(caps?.pageNav || caps?.zoom);
 		this.headerInfoEl?.toggleClass("is-hidden", !show);
 		if (!show) return;
-		this.pageIndicatorEl?.toggleClass("is-hidden", !caps?.pageNav);
 		// 滚动式格式没有"适应宽度/适应高度"（字号缩放），隐藏这两个档位
 		this.zoomSelectEl.toggleClass("is-scroll-format", caps?.pageNav !== true);
 		this.updatePageIndicator(engine?.currentLocation?.() ?? "1");
@@ -328,7 +554,7 @@ export class ReaderView extends ItemView {
 	/**
 	 * 同步分页相关 UI（打开书 / 切换滚动分页模式后调用）：
 	 * - 模式切换按钮是否显示（仅文档式格式）
-	 * - 页码条是否显示（分页模式下显示）
+	 * - 底部进度条是否显示、页码是否可用
 	 * - 总页数（分页模式按引擎估算，PDF 用 spine 数量）
 	 */
 	private syncPagingUi(): void {
@@ -338,14 +564,21 @@ export class ReaderView extends ItemView {
 		this.modeToggleEl?.toggleClass("is-hidden", !caps?.modeSwitch);
 		if (caps?.modeSwitch) this.syncModeToggleIcon();
 		this.layoutToggleEl?.toggleClass("is-hidden", !caps?.layoutSwitch);
-		if (caps?.layoutSwitch) this.syncLayoutToggleIcon();
+		if (caps?.layoutSwitch) {
+			this.syncLayoutToggleIcon();
+			this.syncLayoutToggleAvailability();
+		}
 		this.totalPages = 0;
 		if (caps?.pageNav) {
 			const total = engine?.getTotalPages?.() ?? 0;
 			if (total > 0) this.totalPages = total;
 			else if (book?.format === "pdf") this.totalPages = book.spine.length;
 		}
+		// 页码可用性：分页格式显示 "x / y 页"，滚动式只显示当前页/百分比
+		this.pageIndicatorEl?.toggleClass("is-hidden", !caps?.pageNav);
 		this.syncHeaderControls();
+		this.syncSeekBar();
+		this.syncTransportVisibility();
 	}
 
 	/** 模式切换按钮图标/标题：滚动模式显示"分页"入口，分页模式显示"滚动"入口。 */
@@ -379,20 +612,24 @@ export class ReaderView extends ItemView {
 		// PDF 的 location 就是页码；HTML/TXT 分页模式的 location 是 0~10000 百分比
 		const isPct = Boolean(engine?.capabilities?.pageNav) && book?.format !== "pdf";
 		const page = displayPageFromLocation(location, this.totalPages, isPct);
-		if (!Number.isFinite(page)) {
-			this.pageIndicatorEl.setText("— / —");
-			return;
-		}
-		this.pageIndicatorEl.setText(this.totalPages > 0 ? `${page} / ${this.totalPages} 页` : `${page} 页`);
+		this.currentPageNumber = Number.isFinite(page) ? page : Number.NaN;
+		// 大文件懒加载期间：总页数还只是"已加载部分的页数"，显示为 "N / — 页"；
+		// 按章独立分页时总页数是插值估计（实测偏差约 +6%），加 ≈ 标明。
+		const estimated = engine?.isPageCountEstimated?.() === true;
+		this.pageIndicatorEl.setText(formatPageIndicator(page, this.totalPages, this.contentFullyLoaded, estimated));
 	}
 
-	/** 切换滚动/分页模式：写全局设置 + 当前书的覆盖，引擎同步保持位置。 */
-	private async toggleReadingMode(): Promise<void> {
+	/**
+	 * 切换滚动/分页模式：写全局设置 + 当前书的覆盖，引擎同步保持位置。
+	 * @param target 指定目标模式（true=滚动）；省略则取反
+	 */
+	private async toggleReadingMode(target?: boolean): Promise<void> {
 		if (!this.isReaderInteractive()) return; // 打开中/引擎未就绪：忽略，避免无效操作
 		const engine = this.controller?.currentEngine;
 		const book = this.controller?.currentBook;
 		if (!engine || !book || !engine.capabilities?.modeSwitch) return;
-		const next = this.plugin.settings.reader.scrollMode !== true;
+		const next = target ?? this.plugin.settings.reader.scrollMode !== true;
+		if (next === (this.plugin.settings.reader.scrollMode === true)) return; // 已是目标模式
 		this.plugin.settings.reader.scrollMode = next;
 		// 写入当前书的覆盖，重开这本书时保持本次选择的模式
 		const override = { ...(this.plugin.settings.bookOverrides[book.fingerprint] ?? {}) };
@@ -403,6 +640,11 @@ export class ReaderView extends ItemView {
 		engine.switchMode?.(next);
 		this.syncPagingUi();
 		this.updatePageIndicator(engine.currentLocation?.() ?? "1");
+	}
+
+	/** 切到"滚动模式"（true）或"分页模式"（false）的语义化入口。 */
+	private toggleReadingModeTo(scrollMode: boolean): Promise<void> {
+		return this.toggleReadingMode(scrollMode);
 	}
 
 	/** 切换单页/双页布局：写全局设置 + 当前书覆盖，引擎按百分比原位刷新。 */
@@ -428,6 +670,47 @@ export class ReaderView extends ItemView {
 		this.updatePageIndicator(engine.currentLocation?.() ?? "1");
 	}
 
+	/**
+	 * 「单页/双页」按钮只在**分页模式**下有效：滚动模式下没有"页"的概念，点了不会有任何变化。
+	 *
+	 * 旧实现让这个按钮在滚动模式下仍可点、却什么都不做（也不报错），用户会以为按钮失灵、
+	 * 或以为它和"滚动/分页"是同一个开关 —— 这正是"两个按钮耦合"的观感来源。
+	 * 现在：滚动模式下置灰 + 文案说明；点它时自动切到分页模式并生效（一次点击完成预期操作）。
+	 */
+	private isLayoutToggleEffective(): boolean {
+		const caps = this.controller?.currentEngine?.capabilities;
+		if (!caps?.layoutSwitch) return false;
+		return this.plugin.settings.reader.scrollMode !== true;
+	}
+
+	private syncLayoutToggleAvailability(): void {
+		const el = this.layoutToggleEl;
+		if (!el) return;
+		const effective = this.isLayoutToggleEffective();
+		const show = Boolean(this.controller?.currentEngine?.capabilities?.layoutSwitch);
+		el.toggleClass("is-hidden", !show);
+		el.toggleClass("nyareader-control-disabled", show && !effective);
+		el.setAttribute("aria-disabled", show && !effective ? "true" : "false");
+		if (!show) return;
+		if (effective) {
+			const double = this.plugin.settings.reader.layout === "double";
+			el.setAttribute("title", double ? "切换为单页" : "切换为双页（双栏）");
+			el.setAttribute("aria-label", double ? "切换为单页" : "切换为双页（双栏）");
+			return;
+		}
+		el.setAttribute("title", "双页对开只在分页模式下有效：点击会切到分页模式并启用双页");
+		el.setAttribute("aria-label", "当前为滚动模式，点击将切换到分页模式并启用双页");
+	}
+
+	/** 点「单页/双页」时若当前是滚动模式：先切到分页模式，再应用布局。 */
+	private async toggleLayoutRequested(): Promise<void> {
+		if (!this.isReaderInteractive()) return;
+		if (!this.isLayoutToggleEffective() && this.controller?.currentEngine?.capabilities?.layoutSwitch) {
+			await this.toggleReadingModeTo(false);
+		}
+		await this.toggleLayout();
+	}
+
 	private applyPanelWidth(): void {
 		const w = Math.min(760, Math.max(240, this.plugin.settings.ui.translationPanelWidth || 320));
 		this.transHost?.style.setProperty("--nyareader-trans-width", `${w}px`);
@@ -442,7 +725,7 @@ export class ReaderView extends ItemView {
 		this.addAction("list-tree", "目录", () => this.toggleToc());
 		this.translateActionEl = this.addAction("languages", "翻译（开/关）", () => this.toggleTranslate());
 		this.translateActionEl.addClass("nyareader-titlebar-action");
-		const highlightBtn = this.addAction("highlighter", "高亮选中文本", () => void this.addHighlight());
+		const highlightBtn = this.addAction("highlighter", "高亮选中文本", () => void this.addHighlightWithColor(this.lastHighlightColor));
 		const noteBtn = this.addAction("pencil", "添加笔记", () => void this.addNote());
 		const annotBtn = this.addAction("bookmark", "管理批注", () => this.openAnnotations());
 		const moreBtn = this.addAction("ellipsis-horizontal", "更多操作", (evt) => this.openMoreMenu(evt));
@@ -490,10 +773,11 @@ export class ReaderView extends ItemView {
 			attr: { title: "切换单页/双页" },
 		});
 		this.layoutToggleEl.addClass("is-hidden");
-		this.layoutToggleEl.addEventListener("click", () => void this.toggleLayout());
+		this.layoutToggleEl.addEventListener("click", () => void this.toggleLayoutRequested());
 		this.syncLayoutToggleIcon();
+		this.syncLayoutToggleAvailability();
 
-		this.pageIndicatorEl = container.createSpan({ cls: "nyareader-page-indicator", text: "— / —" });
+		// 页码指示已移至底部脚注（见 buildTransport），此处不再创建
 
 		const zoomOut = container.createEl("button", { cls: "nyareader-header-btn", attr: { title: "缩小", "aria-label": "缩小" } });
 		setIcon(zoomOut, "minus");
@@ -516,6 +800,155 @@ export class ReaderView extends ItemView {
 
 		// 打开期间禁用：模式/布局切换与缩放控件（nudgeZoom 逻辑侧同时拦截）
 		this.busyControls.push(this.modeToggleEl, this.layoutToggleEl, zoomOut, this.zoomSelectEl, zoomIn);
+	}
+
+	// ---------- 底部进度条（页码 + 可拖动 seek） ----------
+
+	/**
+	 * 底部 transport：左侧 `当前 / 总页数 · 百分比`，右侧一条可点击/可拖动的进度条。
+	 *
+	 * 职责边界：本组件只负责"显示 + 手势"，跳转一律交给 `Controller.seekToBookPercent`
+	 * （它会按需补章，因此拖到未加载区域也能定位）。
+	 */
+	private buildTransport(container: HTMLElement): void {
+		const bar = container.createDiv({ cls: "nyareader-transport" });
+		const info = bar.createDiv({ cls: "nyareader-transport-info" });
+		// 页码指示放在脚注（用户要求：不要挤在顶部标题栏）
+		this.pageIndicatorEl = info.createSpan({ cls: "nyareader-page-indicator", text: "— / —" });
+		const percentEl = info.createSpan({ cls: "nyareader-transport-percent", text: "0%" });
+		this.transportPercentEl = percentEl;
+		// 重排提示：大文件改字号/版式时显示，避免被误认为卡死（引擎重排开始前先画出来）
+		this.relayoutHintEl = info.createSpan({ cls: "nyareader-relayout-hint is-hidden", text: "正在重新排版…" });
+
+		const track = bar.createDiv({ cls: "nyareader-seek" });
+		track.setAttribute("role", "slider");
+		track.setAttribute("aria-label", "阅读进度");
+		track.setAttribute("aria-valuemin", "0");
+		track.setAttribute("aria-valuemax", "100");
+		track.setAttribute("aria-valuenow", "0");
+		track.setAttribute("tabindex", "0");
+		this.seekTrackEl = track;
+		this.seekFillEl = track.createDiv({ cls: "nyareader-seek-fill" });
+		this.seekThumbEl = track.createDiv({ cls: "nyareader-seek-thumb" });
+
+		const commit = (clientX: number): void => {
+			const rect = track.getBoundingClientRect();
+			const ratio = ratioFromClientX(clientX, rect.left, rect.width);
+			if (ratio === null) return; // 轨道尺寸未就绪（隐藏/未布局）：忽略本次手势
+			this.seekPercent = ratio;
+			this.applySeekVisual();
+			void this.controller?.seekToBookPercent(ratio);
+		};
+
+		track.addEventListener("pointerdown", (evt: PointerEvent) => {
+			if (!this.isReaderInteractive()) return;
+			evt.preventDefault();
+			this.seeking = true;
+			track.addClass("is-dragging");
+			try {
+				track.setPointerCapture(evt.pointerId);
+			} catch {
+				/* 某些环境不支持指针捕获，退化为普通拖动 */
+			}
+			// 按下即预览位置（不立即跳转，等松手/移动提交）
+			const rect = track.getBoundingClientRect();
+			const ratio = ratioFromClientX(evt.clientX, rect.left, rect.width);
+			if (ratio !== null) {
+				this.seekPercent = ratio;
+				this.applySeekVisual();
+			}
+		});
+		track.addEventListener("pointermove", (evt: PointerEvent) => {
+			if (!this.seeking) return;
+			commit(evt.clientX);
+		});
+		const endDrag = (evt: PointerEvent): void => {
+			if (!this.seeking) return;
+			this.seeking = false;
+			track.removeClass("is-dragging");
+			try {
+				track.releasePointerCapture(evt.pointerId);
+			} catch {
+				/* 忽略 */
+			}
+			commit(evt.clientX);
+		};
+		track.addEventListener("pointerup", endDrag);
+		track.addEventListener("pointercancel", endDrag);
+
+		// 键盘可达：←/→ 微调 2%，Shift 加速到 10%，Home/End 首末
+		track.addEventListener("keydown", (evt: KeyboardEvent) => {
+			if (!this.isReaderInteractive()) return;
+			const next = stepSeekPercent(this.seekPercent, evt.key, evt.shiftKey);
+			if (next === null) return;
+			evt.preventDefault();
+			evt.stopPropagation();
+			this.seekPercent = next;
+			this.applySeekVisual();
+			void this.controller?.seekToBookPercent(this.seekPercent);
+		});
+
+		this.transportEl = bar;
+		this.busyControls.push(track);
+	}
+
+	/**
+	 * 重排状态：大文件改字号/版式时显示"正在重新排版…"。
+	 *
+	 * 引擎会在**阻塞性重排开始前**先把 busy:true 发出来（并把重排推到下一帧），
+	 * 因此这句话一定能在界面冻结之前画到屏幕上；结束后 300ms 淡出。
+	 */
+	private onRelayoutState(state: RelayoutState): void {
+		const el = this.relayoutHintEl;
+		if (!el) return;
+		if (this.relayoutHintTimer !== null) {
+			window.clearTimeout(this.relayoutHintTimer);
+			this.relayoutHintTimer = null;
+		}
+		if (state.busy) {
+			el.removeClass("is-hidden");
+			return;
+		}
+		// 结束：短暂保留后隐藏（避免闪烁），并可选显示耗时
+		if (typeof state.elapsedMs === "number" && state.elapsedMs >= 120) {
+			el.setText(`重新排版完成（${Math.round(state.elapsedMs)}ms）`);
+		} else {
+			el.setText("正在重新排版…");
+		}
+		this.relayoutHintTimer = window.setTimeout(() => {
+			this.relayoutHintTimer = null;
+			el.addClass("is-hidden");
+			el.setText("正在重新排版…");
+		}, 300);
+	}
+
+	/** 同步进度条位置/百分比文字（拖动中不覆盖用户手指位置）。 */
+	private syncSeekBar(): void {
+		if (!this.controller?.currentEngine) {
+			this.applySeekVisual();
+			return;
+		}
+		if (!this.seeking) this.seekPercent = this.controller.currentBookPercent();
+		this.applySeekVisual();
+	}
+
+	/** 把 seekPercent 落到视觉上（填充宽度、滑块位置、百分比文字、aria）。 */
+	private applySeekVisual(): void {
+		const ratio = Math.min(1, Math.max(0, Number.isFinite(this.seekPercent) ? this.seekPercent : 0));
+		const pct = ratio * 100;
+		if (this.seekFillEl) this.seekFillEl.style.width = `${pct}%`;
+		if (this.seekThumbEl) this.seekThumbEl.style.left = `${pct}%`;
+		if (this.transportPercentEl) this.transportPercentEl.setText(formatSeekPercent(ratio));
+		if (this.seekTrackEl) {
+			this.seekTrackEl.setAttribute("aria-valuenow", String(Math.round(pct)));
+			this.seekTrackEl.setAttribute("aria-valuetext", formatPageIndicator(this.currentPageNumber, this.totalPages, this.contentFullyLoaded));
+		}
+	}
+
+	/** 没有书时隐藏底部条；有书时显示。 */
+	private syncTransportVisibility(): void {
+		const show = this.ready && !!this.controller?.currentEngine;
+		this.transportEl?.toggleClass("is-hidden", !show);
 	}
 
 	private onZoomSelectChange(): void {
@@ -562,7 +995,7 @@ export class ReaderView extends ItemView {
 	private openMoreMenu(evt: MouseEvent): void {
 		if (!this.isReaderInteractive()) return; // 打开中：菜单项大多依赖引擎，直接不开
 		const menu = new Menu();
-		menu.addItem((i) => i.setTitle("高亮选中文本").setIcon("highlighter").onClick(() => void this.addHighlight()));
+		menu.addItem((i) => i.setTitle("高亮选中文本").setIcon("highlighter").onClick(() => void this.addHighlightWithColor(this.lastHighlightColor)));
 		menu.addItem((i) => i.setTitle("添加笔记").setIcon("pencil").onClick(() => void this.addNote()));
 		menu.addItem((i) => i.setTitle("管理批注…").setIcon("bookmark").onClick(() => this.openAnnotations()));
 		menu.addSeparator();
@@ -590,10 +1023,44 @@ export class ReaderView extends ItemView {
 		if (!controller) return;
 		new AnnotationListModal(this.app, {
 			getAnnotations: () => controller.listAnnotations(),
-			onJump: (a) => void controller.currentEngine?.goTo(a.location),
-			onEditNote: (a) => controller.updateAnnotationNote(a.id, a.note),
+			// 优先用引擎的 focusHighlight：它按锚点精确解析并滚到位置；不可用时退回 goTo
+			onJump: (a) => {
+				const engine = controller.currentEngine;
+				if (engine?.focusHighlight) engine.focusHighlight(a.id);
+				else void engine?.goTo(a.location);
+			},
+			onEditNote: (a) => controller.updateAnnotation(a.id, { note: a.note }),
 			onDelete: (a) => controller.removeAnnotation(a.id),
+			// 新增：面板内直接改色（侧车 + 引擎重绘）
+			onUpdateColor: (a, color) => controller.updateAnnotation(a.id, { color }),
+			// 新增：导出 Markdown 到 vault
+			onExport: (list) => this.exportAnnotationsMarkdown(list),
 		}).open();
+	}
+
+	/**
+	 * 导出批注为 Markdown（Obsidian 原生高亮 `==…==` + callout 笔记）。
+	 *
+	 * 落盘位置：`<插件目录>/annotations/<书名>.批注.md`（用户可直接在 vault 里 grep/同步）；
+	 * 同名文件采用**覆盖**而非追加，且每条带 `<!-- nyar:id=… -->`，因此重复导出不会产生重复块。
+	 */
+	private async exportAnnotationsMarkdown(list: Annotation[]): Promise<void> {
+		const book = this.controller?.currentBook;
+		if (!book) return;
+		const md = annotationsToMarkdown(list, {
+			bookTitle: book.title,
+			bookPath: book.path,
+			bookFingerprint: book.fingerprint,
+		});
+		const dir = this.plugin.manifest.dir ? `${this.plugin.manifest.dir}/annotations` : "nyareader/annotations";
+		try {
+			await this.plugin.app.vault.adapter.mkdir(dir).catch(() => undefined);
+			const path = `${dir}/${annotationExportFileName(book.title)}`;
+			await this.plugin.app.vault.adapter.write(path, md);
+			new Notice(`NyaReader：已导出 ${list.length} 条批注 → ${path}`, 6000);
+		} catch (e) {
+			new Notice(`NyaReader：导出失败：${e instanceof Error ? e.message : String(e)}`, 6000);
+		}
 	}
 
 	/** 翻译按钮：开（激活变色 + 右侧面板）→ 再点关。 */
@@ -617,6 +1084,8 @@ export class ReaderView extends ItemView {
 
 	private onKeydown(evt: KeyboardEvent): void {
 		if (isEditableTarget(evt.target)) return;
+		// 打开中或引擎未就绪：忽略模式/布局切换、翻页与缩放快捷键（避免"按了没反应"）
+		if (!this.isReaderInteractive()) return;
 		const engine = this.controller?.currentEngine;
 		if (!engine) return;
 		const mod = evt.ctrlKey || evt.metaKey;
@@ -712,7 +1181,9 @@ export class ReaderView extends ItemView {
 				row.setText(item.label);
 				row.addEventListener("click", () => {
 					this.controller?.currentEngine?.goTo(item.location);
-					this.toggleToc(false);
+					// 用户要求：点目录只负责"跳转"，**不自动关闭**目录面板；
+					// 再点标题栏「目录」按钮（或再次点该条目）才收起。这里只更新高亮。
+					this.highlightTocItem(row);
 				});
 				if (item.children?.length) render(item.children, depth + 1);
 			}
@@ -725,6 +1196,14 @@ export class ReaderView extends ItemView {
 		this.tocPanel.toggleClass("is-open", next);
 	}
 
+	/** 标记当前所在目录项（点过的那个高亮），便于用户知道自己在哪一章。 */
+	private highlightTocItem(active: HTMLElement): void {
+		for (const el of Array.from(this.tocListEl.querySelectorAll<HTMLElement>(".nyareader-toc-item.is-current"))) {
+			el.removeClass("is-current");
+		}
+		active.addClass("is-current");
+	}
+
 	private updateTitle(): void {
 		// 重建叶子视图状态以刷新标题（Obsidian 会回调 getDisplayText）
 		void this.leaf;
@@ -734,11 +1213,8 @@ export class ReaderView extends ItemView {
 		await this.plugin.activateBookshelf();
 	}
 
-	private async addHighlight(): Promise<void> {
-		await this.controller?.addAnnotation("highlight");
-	}
-
 	private addNote(): void {
+		if (!this.isReaderInteractive()) return;
 		const controller = this.controller;
 		if (!controller) return;
 		new PromptModal(this.app, {

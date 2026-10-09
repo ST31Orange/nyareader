@@ -107,9 +107,11 @@ describe("EpubParser 端到端", () => {
 });
 
 describe("buildEpubHtml", () => {
-	it("把 spine 章节合并为单文档并生成章节锚点", async () => {
+	it("合成 EPUB（2 章）：默认首屏构建前 2 章，即整本，锚点前缀不变", async () => {
 		const buffer = await makeEpub();
-		const html = await buildEpubHtml(buffer);
+		// 默认 initialChapters = 2；本样本恰好 2 章，因此等价于"合并为单文档"。
+		// 多章样本的"首章优先 + 补章"语义见 tests/epub-lazy.test.ts。
+		const html = await buildEpubHtml(buffer, "EPUB", { initialChapters: 2 });
 		// 合并为单 html
 		expect((html.match(/<html\b/gi) || []).length).toBe(1);
 		// 两章正文都在
@@ -122,7 +124,7 @@ describe("buildEpubHtml", () => {
 		expect(html).not.toContain("<?xml");
 	});
 
-	it("章节带图片时内联为 data URI / 缺失则清空 src", async () => {
+	it("图片改为资源登记：data-nyar-asset 记 zip 绝对路径，不内联 base64、不清空 src", async () => {
 		const zip = new JSZip();
 		zip.file("mimetype", "application/epub+zip");
 		zip.file(
@@ -142,8 +144,15 @@ describe("buildEpubHtml", () => {
 		zip.file("OEBPS/images/a.png", new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
 		const buffer = await zip.generateAsync({ type: "arraybuffer" });
 		const html = await buildEpubHtml(buffer);
-		expect(html).toContain("data:image/png;base64,");
-		// 缺失图片 src 被清空（配合 CSS 隐藏，不破图）
-		expect(html).toContain('src=""');
+		// 新契约：登记为 zip 内绝对路径，由渲染引擎按需解析成 blob: URL
+		expect(html).toContain('data-nyar-asset="OEBPS/images/a.png"');
+		// 原始相对 href 作为回退信息保留，但不再留 src（srcdoc 下必然 404）
+		expect(html).toContain('data-nyar-src="images/a.png"');
+		expect(html).not.toMatch(/<img[^>]*\ssrc=/i);
+		// 不再内联 base64
+		expect(html).not.toContain("data:image/png;base64,");
+		// 缺失图片同样只登记（引擎解析失败时加 .nyareader-img-missing 可见占位），不再清空 src
+		expect(html).toContain('data-nyar-asset="OEBPS/missing.png"');
+		expect(html).not.toContain('src=""');
 	});
 });

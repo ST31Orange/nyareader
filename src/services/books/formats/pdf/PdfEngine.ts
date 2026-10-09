@@ -16,11 +16,13 @@
 import type { AnnotationTarget, IReaderEngine, ReaderEngineEvents, ReaderEngineCapabilities, ZoomMode } from "../../IReaderEngine";
 import { SimpleReaderEmitter } from "../../IReaderEngine";
 import type { ReaderSettings } from "../../../../types";
+import { DEFAULT_READER_SETTINGS } from "../../../../types";
 import { pdfjs, initPdfWorker } from "./pdfWorker";
+import { takePdfHandoff } from "./pdfHandoff";
 import type { Plugin } from "obsidian";
 import type { PDFDocumentProxy, PDFPageProxy, PageViewport } from "pdfjs-dist";
 import type { PageMetrics } from "../../../../utils/pdf-viewport";
-import { findVisibleRange, pageIndexAtMidpoint, pageSizeFromViewport, scrollTopForPage } from "../../../../utils/pdf-viewport";
+import { findVisibleRange, pageIndexAtMidpoint, pageSizeFromViewport, scrollTopForPage, computeRowTops, shiftTopsAfter } from "../../../../utils/pdf-viewport";
 import { normalizeSelectionText } from "../../../../utils/text";
 
 export interface PdfEngineOptions {
@@ -87,8 +89,13 @@ export class PdfEngine implements IReaderEngine {
 	/** 与 slots 同序的滚动布局指标（供纯函数计算可见范围/当前页）。 */
 	private metrics: PageMetrics[] = [];
 	private doc: PDFDocumentProxy | null = null;
+	/** 文档是否由本引擎持有并可释放（避免误销毁别的引擎/解析器仍在用的文档） */
+	private docOwned = false;
+	/** 本渲染批次内有页高被修正，批次结束后需重算一次行偏移 */
+	private topsDirty = false;
 	private destroyed = false;
-	private settings: ReaderSettings = { fontFamily: "system-ui", fontSize: 18, lineHeight: 1.8, margin: 24, theme: "light", layout: "single", scrollMode: true, pageWidth: 420 };
+	// 默认版式与全局默认值同源（重构点：旧实现在多处各写一份字面量，容易漂移）
+	private settings: ReaderSettings = { ...DEFAULT_READER_SETTINGS, scrollMode: true };
 	/** 页面行容器（单页：一行一页；双页：一行两页对开）。 */
 	private rows: HTMLElement[] = [];
 
@@ -132,13 +139,16 @@ export class PdfEngine implements IReaderEngine {
 		this.pagesEl.style.gap = `${PAGE_GAP}px`;
 		try {
 			await initPdfWorker(this.opts.plugin);
-			const loadingTask = pdfjs.getDocument({
-				data: this.opts.buffer,
-				isEvalSupported: false,
-				useSystemFonts: true,
-			});
-			this.doc = await loadingTask.promise;
-			if (this.destroyed) return;
+			// 打开大 PDF 的性能要点：解析阶段（PdfParser 取元数据/目录）已经
+			// getDocument 过一次，这里优先复用同一份已解析文档，避免重复解析。
+			const handed = takePdfHandoff(this.opts.buffer);
+			this.doc = handed ?? (await pdfjs.getDocument({ data: this.opts.buffer, isEvalSupported: false, useSystemFonts: true }).promise);
+			// 复用来的文档由本引擎负责释放（解析方已通过交接转移所有权）
+			this.docOwned = true;
+			if (this.destroyed) {
+				this.releaseDoc();
+				return;
+			}
 			await this.buildSlots();
 			if (this.destroyed) return;
 			this.attachListeners();
@@ -169,6 +179,7 @@ export class PdfEngine implements IReaderEngine {
 		this.slots = [];
 		this.rows = [];
 		this.pagesEl?.empty();
+		this.releaseDoc();
 		this.container?.removeClass("nyareader-pdf-root");
 		this.container?.removeClass("is-theme-dark");
 		this.container?.removeClass("is-theme-sepia");
@@ -399,6 +410,10 @@ export class PdfEngine implements IReaderEngine {
 	/**
 	 * 重排所有页面：更新缩放、清空渲染、尺寸与纵向偏移。
 	 * keepAnchor=true 时保持当前阅读位置在缩放前后视觉上不跳。
+	 *
+	 * 性能要点：纵向偏移改由 computeRowTops() **纯计算**得出，不再逐个读
+	 * `el.offsetTop`（3000 页 × 每次重排 = 大量强制布局）。行高 = 行内最高页高，
+	 * 行间叠加 PAGE_GAP，与 DOM 的 flex 列布局严格一致。
 	 */
 	private relayout(keepAnchor: boolean): void {
 		if (!this.container || this.slots.length === 0) return;
@@ -412,22 +427,61 @@ export class PdfEngine implements IReaderEngine {
 			slot.el.style.width = `${slot.cssW}px`;
 			slot.el.style.height = `${slot.cssH}px`;
 		}
-		// 读取一次真实布局，缓存每页在滚动内容内的偏移。
-		for (const slot of this.slots) slot.top = slot.el.offsetTop;
-		this.metrics = this.slots.map((s) => ({ top: s.top, height: s.cssH }));
+		this.recomputeAllTops();
 		if (anchor) this.restoreAnchor(anchor);
 	}
 
-	/** 单页尺寸与占位不一致时（混合尺寸 PDF）就地修正并重算偏移。 */
+	/** 行布局参数（与 buildSlots/rebuildRows 的 DOM 结构一致）。 */
+	private rowLayout(): { cols: number; gap: number; contentTop: number } {
+		const cs = this.pagesEl ? window.getComputedStyle(this.pagesEl) : null;
+		const contentTop = cs ? parseFloat(cs.paddingTop) || 0 : 0;
+		return { cols: this.spreadActive() ? 2 : 1, gap: PAGE_GAP, contentTop };
+	}
+
+	/** 纯算术重算全部页偏移（O(n)，无强制布局）。 */
+	private recomputeAllTops(): void {
+		const heights = this.slots.map((s) => s.cssH);
+		const tops = computeRowTops(heights, this.rowLayout());
+		for (let i = 0; i < this.slots.length; i++) {
+			this.slots[i].top = tops[i];
+			const metric = this.metrics[i];
+			if (metric) {
+				metric.top = tops[i];
+				metric.height = heights[i];
+			} else {
+				this.metrics[i] = { top: tops[i], height: heights[i] };
+			}
+		}
+		this.metrics.length = this.slots.length;
+	}
+
+	/**
+	 * 单页尺寸与占位不一致时（混合尺寸 PDF）就地修正并重算偏移。
+	 *
+	 * 性能要点（重构：原实现是 O(页数²)）：
+	 * 旧代码每次修正都 `for (const s of this.slots) s.top = s.el.offsetTop`，
+	 * 即每渲染一页就强制布局一次全表；滚动一屏（约 50 页）在 3000 页文档上
+	 * 退化成数十万次布局读取。现在改为：
+	 * - 只写 CSS + 标记 topsDirty；
+	 * - 行偏移用 computeRowTops() **纯算术**重算，且一个渲染批次只重算一次
+	 *   （renderWindow 结束后 flushRowTops），不再逐页强制布局。
+	 */
 	private fixSlotSize(slot: PageSlot, cssW: number, cssH: number): void {
 		if (slot.cssW === cssW && slot.cssH === cssH) return;
-		const anchor = this.captureAnchor();
 		slot.cssW = cssW;
 		slot.cssH = cssH;
 		slot.el.style.width = `${cssW}px`;
 		slot.el.style.height = `${cssH}px`;
-		for (const s of this.slots) s.top = s.el.offsetTop;
-		this.metrics = this.slots.map((s) => ({ top: s.top, height: s.cssH }));
+		// 尺寸变了，行高与偏移需要重算；真正的重算推迟到批次结束（flushRowTops）
+		this.topsDirty = true;
+	}
+
+	/** 若本批次修改过页高，则重算一次行偏移（O(n) 纯算术，不读 DOM）。 */
+	private flushRowTops(): void {
+		if (!this.topsDirty) return;
+		this.topsDirty = false;
+		const anchor = this.captureAnchor();
+		this.recomputeAllTops();
 		this.restoreAnchor(anchor);
 	}
 
@@ -453,6 +507,8 @@ export class PdfEngine implements IReaderEngine {
 		const jobs: Array<Promise<void>> = [];
 		for (let i = from; i <= to; i++) jobs.push(this.renderSlot(this.slots[i]));
 		await Promise.all(jobs);
+		// 本批次若修正过任何页的尺寸，在这里统一重算一次行偏移
+		this.flushRowTops();
 	}
 
 	/** 返回与视口（上下各留 margin）相交的页面索引区间。 */
@@ -853,10 +909,17 @@ export class PdfEngine implements IReaderEngine {
 		if (sel && sel.text) this.emitter.emit("selection", { text: sel.text });
 	}
 
+	/** 释放本引擎持有的 pdf.js 文档（幂等；未持有的文档不销毁）。 */
+	private releaseDoc(): void {
+		const doc = this.doc;
+		this.doc = null;
+		if (!doc || !this.docOwned) return;
+		this.docOwned = false;
+		void doc.destroy().catch(() => undefined);
+	}
+
 	destroy(): void {
 		this.teardown();
-		void this.doc?.destroy();
-		this.doc = null;
 		this.annotations = [];
 		this.emitter.clear();
 	}
