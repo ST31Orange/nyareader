@@ -599,6 +599,7 @@
 	align-items: center;
 	gap: 6px;
 	min-width: 0;
+	flex: 1;
 }
 .nyareader-shelf-collapse {
 	display: inline-flex;
@@ -1116,4 +1117,107 @@
 .nyareader-feedback a {
 	color: var(--text-accent);
 	font-weight: 600;
+}
+
+/* ===== 书架：左书库列 + 右文件夹区 ===== */
+.nyareader-shelf-body {
+	display: flex;
+	gap: 16px;
+	align-items: flex-start;
+}
+.nyareader-library-col {
+	flex: 0 0 160px;
+	width: 160px;
+	position: sticky;
+	top: 0;
+	align-self: flex-start;
+	max-height: calc(100vh - 150px);
+	overflow-y: auto;
+	border-right: 1px solid var(--background-modifier-border);
+	padding-right: 10px;
+}
+.nyareader-library-col-title {
+	font-size: 11px;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	margin-bottom: 6px;
+	padding-left: 8px;
+}
+.nyareader-library-list {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+.nyareader-library-item {
+	display: flex;
+	align-items: center;
+	padding: 6px 10px;
+	border-radius: 6px;
+	cursor: pointer;
+	font-size: 13px;
+	color: var(--text-normal);
+	border: 1px solid transparent;
+	user-select: none;
+}
+.nyareader-library-item:hover {
+	background: var(--background-modifier-hover);
+}
+.nyareader-library-item.is-active {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+.nyareader-library-item.is-dragging {
+	opacity: 0.4;
+}
+.nyareader-library-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.nyareader-library-empty {
+	color: var(--text-muted);
+	font-size: 12px;
+	white-space: pre-line;
+	padding: 8px 6px;
+	line-height: 1.6;
+}
+.nyareader-shelf-main {
+	flex: 1;
+	min-width: 0;
+}
+.nyareader-shelf-main-bar {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-bottom: 12px;
+}
+.nyareader-shelf-main-bar h3 {
+	margin: 0;
+	font-size: 16px;
+}
+.nyareader-shelf-main-bar .nyareader-shelf-btn {
+	margin-left: auto;
+}
+/* 文件夹拖动排序手柄 */
+.nyareader-folder-grip {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	color: var(--text-faint);
+	cursor: grab;
+	flex: none;
+}
+.nyareader-folder-grip:hover {
+	color: var(--text-normal);
+}
+.nyareader-folder-grip svg {
+	width: 14px;
+	height: 14px;
+}
+.nyareader-shelf-zone.is-dragging {
+	opacity: 0.5;
 }

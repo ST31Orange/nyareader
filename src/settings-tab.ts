@@ -3,10 +3,13 @@
  * 翻译区（v0.2.0）：引擎配置委托独立插件 NyaLingo 一份，
  * 本面板只负责：目标语言（UI 级）、NyaLingo 安装状态、跳转/向导、测试连接、清缓存。
  */
-import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting, TFolder } from "obsidian";
 import type NyaReaderPlugin from "./main";
+import { ConfirmModal } from "./view/components/ConfirmModal";
 import alipayIcon from "./assets/donate-alipay.jpg";
 import wechatIcon from "./assets/donate-wechat.jpg";
+
+const BOOKSHELF_DIR = "nyareader/library";
 
 export class NyaReaderSettingTab extends PluginSettingTab {
 	constructor(
@@ -61,6 +64,42 @@ export class NyaReaderSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				});
 		});
+
+		// ---------- 书库管理（删除书库放在设置里） ----------
+		containerEl.createEl("h3", { text: "书库管理" });
+		const shelfRoot = this.plugin.app.vault.getAbstractFileByPath(BOOKSHELF_DIR);
+		const libraries = shelfRoot instanceof TFolder ? shelfRoot.children.filter((c): c is TFolder => c instanceof TFolder) : [];
+		if (!libraries.length) {
+			containerEl.createEl("p", { cls: "nyareader-hint", text: "还没有书库。可在书架页用「＋ 新建书库」创建。" });
+		}
+		for (const lib of libraries) {
+			new Setting(containerEl)
+				.setName(lib.name)
+				.setDesc("删除该书库及其中的所有文件夹与书（不可恢复）")
+				.addButton((b) =>
+					b.setButtonText("删除").setWarning().onClick(() => {
+						new ConfirmModal(this.app, {
+							title: "删除书库",
+							message: `删除书库「${lib.name}」及其中的所有文件夹与书籍？此操作不可恢复。`,
+							confirmText: "删除",
+							onConfirm: async () => {
+								await this.plugin.app.vault.delete(lib, true);
+								const prefix = `${lib.path}/`;
+								for (const e of this.plugin.bookIndex.list()) {
+									if (e.path.startsWith(prefix)) await this.plugin.bookIndex.remove(e.fingerprint);
+								}
+								const st = this.plugin.settings;
+								st.bookshelfLibraryOrder = st.bookshelfLibraryOrder.filter((x) => x !== lib.name);
+								delete st.bookshelfFolderOrder[lib.name];
+								if (st.bookshelfSelectedLibrary === lib.name) st.bookshelfSelectedLibrary = "";
+								await this.plugin.saveSettings();
+								new Notice(`NyaReader：已删除书库「${lib.name}」。`);
+								this.display();
+							},
+						}).open();
+					})
+				);
+		}
 
 		// ---------- 翻译（委托 NyaLingo） ----------
 		containerEl.createEl("h3", { text: "翻译" });

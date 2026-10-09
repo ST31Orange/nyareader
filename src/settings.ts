@@ -39,6 +39,14 @@ export interface NyaReaderSettings {
 	bookshelfModes: Record<string, BookshelfDisplayMode>;
 	/** 书架各区域是否折叠：区域相对路径 -> 折叠 */
 	bookshelfCollapsed: Record<string, boolean>;
+	/** 书库顺序（书库相对路径数组，手动拖动调序） */
+	bookshelfLibraryOrder: string[];
+	/** 每个书库内的文件夹顺序：书库相对路径 -> 文件夹相对路径数组 */
+	bookshelfFolderOrder: Record<string, string[]>;
+	/** 当前选中的书库（相对路径） */
+	bookshelfSelectedLibrary: string;
+	/** 是否已完成「文件夹 -> 书库」结构迁移 */
+	bookshelfMigrated: boolean;
 	/** 批注侧车文件名后缀 */
 	annotationSidecarSuffix: string;
 }
@@ -69,6 +77,10 @@ export const DEFAULT_SETTINGS: NyaReaderSettings = {
 	translationPromptShown: false,
 	bookshelfModes: {},
 	bookshelfCollapsed: {},
+	bookshelfLibraryOrder: [],
+	bookshelfFolderOrder: {},
+	bookshelfSelectedLibrary: "",
+	bookshelfMigrated: false,
 	annotationSidecarSuffix: ".annotations",
 };
 
@@ -96,6 +108,10 @@ export function normalizeSettings(raw: unknown): NyaReaderSettings {
 		},
 		bookshelfModes: sanitizeBookshelfModes(v.bookshelfModes),
 		bookshelfCollapsed: sanitizeBookshelfCollapsed(v.bookshelfCollapsed),
+		bookshelfLibraryOrder: arrayOfStrings(v.bookshelfLibraryOrder),
+		bookshelfFolderOrder: sanitizeFolderOrder(v.bookshelfFolderOrder),
+		bookshelfSelectedLibrary: strOr(v.bookshelfSelectedLibrary, ""),
+		bookshelfMigrated: v.bookshelfMigrated === true,
 		ui: {
 			translationPanelWidth: clamp(Number(u.translationPanelWidth), 240, 760, DEFAULT_UI_SETTINGS.translationPanelWidth),
 		},
@@ -110,6 +126,24 @@ export function sanitizeBookshelfModes(raw: unknown): Record<string, BookshelfDi
 	const out: Record<string, BookshelfDisplayMode> = {};
 	for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
 		if (v === "full" || v === "compact" || v === "list") out[k] = v;
+	}
+	return out;
+}
+
+/** 字符串数组（去空、去重）。 */
+export function arrayOfStrings(raw: unknown): string[] {
+	if (!Array.isArray(raw)) return [];
+	const out: string[] = [];
+	for (const v of raw) if (typeof v === "string" && v && !out.includes(v)) out.push(v);
+	return out;
+}
+
+/** 每个书库的文件夹顺序：只保留 string[]。 */
+export function sanitizeFolderOrder(raw: unknown): Record<string, string[]> {
+	if (!raw || typeof raw !== "object") return {};
+	const out: Record<string, string[]> = {};
+	for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+		if (Array.isArray(v)) out[k] = arrayOfStrings(v);
 	}
 	return out;
 }

@@ -146,10 +146,11 @@ export default class NyaReaderPlugin extends Plugin {
 			new Notice("NyaReader：不支持的电子书格式。");
 			return;
 		}
-		// 复制到 vault 可见的 nyareader/library，保证后续按 vault 路径读写、批注、书架索引
-		const dir = "nyareader/library";
-		await this.app.vault.createFolder(dir).catch(() => undefined);
-		const destPath = await this.uniqueBookPath(file.name);
+		// 复制到当前（或默认）书库的「未分类」文件夹——新模型里书必须放在文件夹里
+		const library = this.settings.bookshelfSelectedLibrary || "我的书库";
+		const dir = `nyareader/library/${library}/未分类`;
+		await this.mkdirpVault(dir);
+		const destPath = await this.uniqueBookPath(dir, file.name);
 		await this.app.vault.createBinary(destPath, buf);
 		const vaultFile = this.app.vault.getAbstractFileByPath(destPath);
 		if (vaultFile instanceof TFile) await this.openBookFile(vaultFile);
@@ -157,18 +158,28 @@ export default class NyaReaderPlugin extends Plugin {
 	}
 
 	/** 生成不冲突的书架路径：同名文件自动加 (1)、(2)… 后缀，避免覆盖。 */
-	private async uniqueBookPath(fileName: string): Promise<string> {
+	private async uniqueBookPath(dir: string, fileName: string): Promise<string> {
 		const safe = sanitizeFileName(fileName);
 		const dot = safe.lastIndexOf(".");
 		const stem = dot > 0 ? safe.slice(0, dot) : safe;
 		const ext = dot > 0 ? safe.slice(dot) : "";
-		let candidate = `nyareader/library/${safe}`;
+		let candidate = `${dir}/${safe}`;
 		let i = 1;
 		while (this.app.vault.getAbstractFileByPath(candidate)) {
-			candidate = `nyareader/library/${stem} (${i})${ext}`;
+			candidate = `${dir}/${stem} (${i})${ext}`;
 			i++;
 		}
 		return candidate;
+	}
+
+	/** 递归创建 vault 目录。 */
+	private async mkdirpVault(dir: string): Promise<void> {
+		const parts = dir.split("/").filter(Boolean);
+		let cur = "";
+		for (const part of parts) {
+			cur = cur ? `${cur}/${part}` : part;
+			if (!this.app.vault.getAbstractFileByPath(cur)) await this.app.vault.createFolder(cur).catch(() => undefined);
+		}
 	}
 
 	async openBookFile(file: TFile): Promise<void> {

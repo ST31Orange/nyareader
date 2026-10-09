@@ -1,11 +1,10 @@
 /**
- * BookshelfService 单测：目录扫描分组、新建区域、导入、删除、排序、路径拆分。
+ * BookshelfService 单测：书库/文件夹扫描、新建、导入、删除、重命名、移动、排序、路径拆分。
  */
 import { describe, it, expect } from "vitest";
 import { BookshelfService, BookshelfAdapter, splitPath, SUPPORTED_BOOK_EXT } from "../src/services/storage/BookshelfService";
-import type { BookFormat } from "../src/types";
 
-/** 内存版 adapter，模拟 nyareader/library/ 下的文件树。 */
+/** 内存版 adapter，模拟 nyareader/library/ 下的文件树（书库/文件夹/书）。 */
 function memAdapter(initialFiles: string[], initialFolders: string[]): BookshelfAdapter & { files: Set<string>; folders: Set<string>; removed: string[]; writes: Array<{ path: string; data: ArrayBuffer }> } {
 	const files = new Set(initialFiles);
 	const folders = new Set(initialFolders);
@@ -28,7 +27,6 @@ function memAdapter(initialFiles: string[], initialFolders: string[]): Bookshelf
 		async exists(p) {
 			const clean = p.replace(/\/+$/, "");
 			if (files.has(clean) || folders.has(clean)) return true;
-			// 目录本身不在集合但存在子项时也算存在（贴近真实 DataAdapter）
 			const prefix = clean + "/";
 			for (const f of files) if (f.startsWith(prefix)) return true;
 			for (const f of folders) if (f.startsWith(prefix)) return true;
@@ -46,6 +44,22 @@ function memAdapter(initialFiles: string[], initialFolders: string[]): Bookshelf
 			folders.delete(p.replace(/\/+$/, ""));
 			removed.push(p);
 		},
+		async rename(oldPath, newPath) {
+			const oldClean = oldPath.replace(/\/+$/, "");
+			const newClean = newPath.replace(/\/+$/, "");
+			if (files.has(oldClean)) {
+				files.delete(oldClean);
+				files.add(newClean);
+				return;
+			}
+			if (folders.has(oldClean)) {
+				folders.delete(oldClean);
+				folders.add(newClean);
+				const prefix = oldClean + "/";
+				for (const f of [...files]) if (f.startsWith(prefix)) { files.delete(f); files.add(newClean + f.slice(oldClean.length)); }
+				for (const d of [...folders]) if (d.startsWith(prefix)) { folders.delete(d); folders.add(newClean + d.slice(oldClean.length)); }
+			}
+		},
 	};
 }
 
@@ -53,7 +67,7 @@ const LIB = "nyareader/library";
 
 describe("splitPath", () => {
 	it("拆分目录/文件名/扩展名", () => {
-		expect(splitPath("nyareader/library/科幻/a.epub")).toEqual({ dir: "nyareader/library/科幻", base: "a", ext: "epub" });
+		expect(splitPath("nyareader/library/我的书库/科幻/a.epub")).toEqual({ dir: "nyareader/library/我的书库/科幻", base: "a", ext: "epub" });
 		expect(splitPath("root/book.PDF")).toEqual({ dir: "root", base: "book", ext: "pdf" });
 	});
 	it("支持反斜杠", () => {
@@ -61,60 +75,87 @@ describe("splitPath", () => {
 	});
 });
 
-describe("BookshelfService.loadBooks", () => {
-	it("按子文件夹分组，忽略不支持格式", async () => {
+describe("BookshelfService.loadLibraries / loadFolders", () => {
+	it("顶层目录为书库（只取一级）", async () => {
+		const adapter = memAdapter(
+			["nyareader/library/我的书库/科幻/a.epub"],
+			["nyareader/library/我的书库", "nyareader/library/我的书库/科幻", "nyareader/library/英语"]
+		);
+		const svc = new BookshelfService(adapter, LIB, () => undefined);
+		const libs = await svc.loadLibraries();
+		expect(libs.map((l) => l.relPath).sort()).toEqual(["我的书库", "英语"]);
+	});
+	it("书库内按文件夹分组，忽略书库根目录书与不支持格式", async () => {
 		const adapter = memAdapter(
 			[
-				"nyareader/library/root.pdf",
-				"nyareader/library/科幻/a.epub",
-				"nyareader/library/科幻/b.mobi",
-				"nyareader/library/科幻/note.md",
+				"nyareader/library/我的书库/root.pdf",
+				"nyareader/library/我的书库/科幻/a.epub",
+				"nyareader/library/我的书库/科幻/b.mobi",
+				"nyareader/library/我的书库/科幻/note.md",
 			],
-			["nyareader/library/科幻"]
+			["nyareader/library/我的书库", "nyareader/library/我的书库/科幻"]
 		);
 		const svc = new BookshelfService(adapter, LIB, () => ({ title: "T", author: "A", progress: 0.5, lastOpenedAt: 1000 }));
-		const folders = await svc.loadBooks();
-		expect(folders.length).toBe(2);
-		const root = folders.find((f) => f.relPath === "")!;
-		const scifi = folders.find((f) => f.relPath === "科幻")!;
-		expect(root.books.map((b) => b.name)).toEqual(["root"]);
-		expect(scifi.books.map((b) => b.name)).toEqual(["a", "b"]);
-		expect(scifi.books[0].author).toBe("A");
+		const folders = await svc.loadFolders("我的书库");
+		expect(folders.length).toBe(1);
+		expect(folders[0].relPath).toBe("科幻");
+		expect(folders[0].books.map((b) => b.name)).toEqual(["a", "b"]);
+		expect(folders[0].books[0].author).toBe("A");
 	});
-	it("library 目录不存在时返回空列表", async () => {
+	it("library 目录不存在时返回空", async () => {
 		const adapter = memAdapter([], []);
 		const svc = new BookshelfService(adapter, LIB, () => undefined);
-		expect(await svc.loadBooks()).toEqual([]);
+		expect(await svc.loadLibraries()).toEqual([]);
+		expect(await svc.loadFolders("我的书库")).toEqual([]);
 	});
 });
 
-describe("BookshelfService.createFolder / importFiles / delete", () => {
-	it("新建区域并去除非安全字符", async () => {
+describe("BookshelfService.create / import / delete / rename / move", () => {
+	it("新建书库与文件夹并去除非安全字符", async () => {
 		const adapter = memAdapter([], []);
 		const svc = new BookshelfService(adapter, LIB, () => undefined);
-		expect(await svc.createFolder(" 玄幻/新 ")).toBe(true);
-		expect(await svc.createFolder(" 玄幻/新 ")).toBe(false); // 已存在
+		expect(await svc.createLibrary(" 我的书库 ")).toBe(true);
+		expect(await svc.createLibrary(" 我的书库 ")).toBe(false);
+		expect(await svc.createFolder("我的书库", " 玄幻/新 ")).toBe(true);
+		expect(await svc.createFolder("我的书库", " 玄幻/新 ")).toBe(false);
 	});
-	it("导入文件写入目标区域并过滤不支持格式", async () => {
+	it("导入文件写入书库内的文件夹并过滤不支持格式", async () => {
 		const adapter = memAdapter([], []);
 		const svc = new BookshelfService(adapter, LIB, () => undefined);
 		const data = new TextEncoder().encode("abc").buffer as ArrayBuffer;
-		const ok = await svc.importFiles([{ name: "x.epub", data }, { name: "y.md", data }], "科幻");
+		const ok = await svc.importFiles([{ name: "x.epub", data }, { name: "y.md", data }], "我的书库", "科幻");
 		expect(ok).toBe(1);
-		expect(adapter.writes[0].path).toBe("nyareader/library/科幻/x.epub");
+		expect(adapter.writes[0].path).toBe("nyareader/library/我的书库/科幻/x.epub");
 	});
-	it("删除书与删除区域", async () => {
-		const adapter = memAdapter(["nyareader/library/a.epub"], ["nyareader/library/子"]);
+	it("重命名书库（移动一级目录）", async () => {
+		const adapter = memAdapter(["nyareader/library/旧库/科幻/a.epub"], ["nyareader/library/旧库", "nyareader/library/旧库/科幻"]);
 		const svc = new BookshelfService(adapter, LIB, () => undefined);
-		await svc.deleteBook("nyareader/library/a.epub");
-		expect(adapter.removed).toContain("nyareader/library/a.epub");
-		await svc.deleteFolder("子");
-		expect(adapter.removed).toContain("nyareader/library/子");
+		const newRel = await svc.renameLibrary("旧库", "新库");
+		expect(newRel).toBe("新库");
+		expect(adapter.files.has("nyareader/library/新库/科幻/a.epub")).toBe(true);
 	});
-	it("拒绝删除书架根目录（防御性护栏）", async () => {
-		const adapter = memAdapter(["nyareader/library/a.epub"], []);
+	it("移动书籍到另一书库的文件夹", async () => {
+		const adapter = memAdapter(["nyareader/library/A/科幻/a.epub"], ["nyareader/library/A", "nyareader/library/A/科幻", "nyareader/library/B"]);
 		const svc = new BookshelfService(adapter, LIB, () => undefined);
-		await expect(svc.deleteFolder("")).rejects.toThrow(/根目录/);
+		const dest = await svc.moveBook("nyareader/library/A/科幻/a.epub", "B", "历史");
+		expect(dest).toBe("nyareader/library/B/历史/a.epub");
+		expect(adapter.files.has("nyareader/library/B/历史/a.epub")).toBe(true);
+	});
+	it("删除书、文件夹、书库", async () => {
+		const adapter = memAdapter(["nyareader/library/A/科幻/a.epub"], ["nyareader/library/A", "nyareader/library/A/科幻"]);
+		const svc = new BookshelfService(adapter, LIB, () => undefined);
+		await svc.deleteBook("nyareader/library/A/科幻/a.epub");
+		expect(adapter.removed).toContain("nyareader/library/A/科幻/a.epub");
+		await svc.deleteFolder("A", "科幻");
+		expect(adapter.removed).toContain("nyareader/library/A/科幻");
+		await svc.deleteLibrary("A");
+		expect(adapter.removed).toContain("nyareader/library/A");
+	});
+	it("拒绝删除书库根目录（防御性护栏）", async () => {
+		const adapter = memAdapter([], []);
+		const svc = new BookshelfService(adapter, LIB, () => undefined);
+		await expect(svc.deleteLibrary("")).rejects.toThrow(/根目录/);
+		await expect(svc.deleteFolder("", "x")).rejects.toThrow(/根目录/);
 		expect(adapter.removed).toHaveLength(0);
 	});
 });
