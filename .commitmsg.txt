@@ -1,8 +1,0 @@
-feat(bookshelf/settings): 书架标题左侧新增设置按钮（乌鸦图）；设置页增加简介/打赏/反馈 (v0.3.29)
-
-- 书架顶部「我的书架」左侧新增乌鸦看书图片的设置按钮，点击打开 NyaReader 设置
-  （新增 NyaReaderPlugin.openSettings()）
-- 设置页顶部加简介；底部新增「支持我们」（支付宝/微信打赏二维码，参考 NyaHome）
-  与「反馈」（邮件 nyaspace@163.com 文案）
-- 资源：reader.png / donate-alipay.jpg / donate-wechat.jpg 随 esbuild dataurl 打包
-单测 99/99
